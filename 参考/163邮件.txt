@@ -1,0 +1,13 @@
+------=_Part_335_3497674.1752878023828
+Content-Type: text/plain; charset=GBK
+Content-Transfer-Encoding: base64
+
+suLK1Ao=
+------=_Part_335_3497674.1752878023828
+Content-Type: text/html; charset=GBK
+Content-Transfer-Encoding: base64
+
+PGRpdiBkYXRhLW50ZXM9Im50ZXNfbWFpbF9ib2R5X3Jvb3QiIHN0eWxlPSJsaW5lLWhlaWdodDox
+Ljc7Y29sb3I6IzAwMDAwMDtmb250LXNpemU6MTRweDtmb250LWZhbWlseTpBcmlhbCI+PHA+suLK
+1Dxicj48L3A+PC9kaXY+
+------=_Part_335_3497674.1752878023828--

@@ -1,0 +1,831 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.title}} - Miko邮箱系统</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="/static/css/style.css" rel="stylesheet">
+    <style>
+        .spin {
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+<div class="container-fluid">
+    <div class="row min-vh-100">
+        <!-- 侧边栏 -->
+        <div class="col-md-3 col-lg-2 sidebar">
+            <div class="d-flex flex-column h-100 p-3 bg-primary text-white">
+                <a href="/admin/dashboard" class="d-flex align-items-center mb-3 mb-md-0 me-md-auto text-white text-decoration-none">
+                    <i class="bi bi-shield-check me-2"></i>
+                    <span class="fs-4">管理员面板</span>
+                </a>
+                <hr>
+                <ul class="nav nav-pills flex-column mb-auto">
+                    <li class="nav-item">
+                        <a href="/admin/dashboard" class="nav-link text-white">
+                            <i class="bi bi-speedometer2 me-2"></i>
+                            仪表板
+                        </a>
+                    </li>
+                    <li>
+                        <a href="/admin/users" class="nav-link text-white">
+                            <i class="bi bi-people me-2"></i>
+                            用户管理
+                        </a>
+                    </li>
+                    <li>
+                        <a href="/admin/mailboxes" class="nav-link text-white">
+                            <i class="bi bi-envelope me-2"></i>
+                            邮箱管理
+                        </a>
+                    </li>
+                    <li>
+                        <a href="/admin/domains" class="nav-link active text-white">
+                            <i class="bi bi-globe me-2"></i>
+                            域名管理
+                        </a>
+                    </li>
+                </ul>
+                <hr>
+                <div class="dropdown">
+                    <a href="#" class="d-flex align-items-center text-white text-decoration-none dropdown-toggle" id="dropdownUser1" data-bs-toggle="dropdown">
+                        <i class="bi bi-person-circle me-2"></i>
+                        <strong>{{.username}}</strong>
+                    </a>
+                    <ul class="dropdown-menu dropdown-menu-dark text-small shadow">
+                        <li><a class="dropdown-item" href="/settings">个人设置</a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="#" onclick="logout()">退出登录</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- 主内容区 -->
+        <div class="col-md-9 col-lg-10 main-content">
+            <div class="container-fluid p-4">
+                <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+                    <h1 class="h2">域名管理</h1>
+                    <div class="btn-toolbar mb-2 mb-md-0">
+                        <div class="btn-group me-2">
+                            <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addDomainModal">
+                                <i class="bi bi-plus-circle"></i> 添加域名
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="refreshDomains()">
+                                <i class="bi bi-arrow-clockwise"></i> 刷新
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 域名列表 -->
+                <div class="card shadow">
+                    <div class="card-header py-3 d-flex justify-content-between align-items-center">
+                        <h6 class="m-0 font-weight-bold text-primary">域名列表</h6>
+                        <div class="domain-actions" id="domainActions" style="display: none;">
+                            <div class="btn-group" role="group">
+                                <button type="button" class="btn btn-sm btn-outline-primary" onclick="selectAllDomains()">
+                                    <i class="bi bi-check-all"></i> 全选
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="unselectAllDomains()">
+                                    <i class="bi bi-x-circle"></i> 取消全选
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline-info" onclick="verifySelectedDomains()">
+                                    <i class="bi bi-shield-check"></i> 验证选中
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteSelectedDomains()">
+                                    <i class="bi bi-trash"></i> 删除选中
+                                </button>
+                                <button type="button" class="btn btn-sm btn-danger" onclick="deleteAllDomains()">
+                                    <i class="bi bi-trash-fill"></i> 删除全部
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th width="50">
+                                        <input type="checkbox" class="form-check-input" id="selectAllDomainsCheckbox"
+                                               onchange="toggleAllDomains(this.checked)">
+                                    </th>
+                                    <th>域名</th>
+                                    <th>验证状态</th>
+                                    <th>MX记录</th>
+                                    <th>A记录</th>
+                                    <th>TXT记录</th>
+                                    <th>创建时间</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="domainsTable">
+                                <tr>
+                                    <td colspan="7" class="text-center">
+                                        <div class="spinner-border" role="status">
+                                            <span class="visually-hidden">Loading...</span>
+                                        </div>
+                                        加载中...
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 添加域名模态框 -->
+<div class="modal fade" id="addDomainModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-plus-circle me-2"></i>
+                    添加域名
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="addDomainForm">
+                    <div class="mb-3">
+                        <label for="domainName" class="form-label">域名</label>
+                        <input type="text" class="form-control" id="domainName" name="name" placeholder="例如: example.com" required>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="mxRecord" class="form-label">MX记录</label>
+                                <input type="text" class="form-control" id="mxRecord" name="mx_record" placeholder="例如: mail.example.com">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="aRecord" class="form-label">A记录</label>
+                                <input type="text" class="form-control" id="aRecord" name="a_record" placeholder="例如: 192.168.1.100">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="txtRecord" class="form-label">TXT记录</label>
+                        <input type="text" class="form-control" id="txtRecord" name="txt_record" placeholder="例如: v=spf1 ip4:192.168.1.100 ~all">
+                    </div>
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle me-2"></i>
+                        <strong>DNS配置说明：</strong>
+                        <ul class="mb-0 mt-2">
+                            <li><strong>MX记录：</strong>用于邮件交换，指向您的邮件服务器</li>
+                            <li><strong>A记录：</strong>将域名指向服务器IP地址</li>
+                            <li><strong>TXT记录：</strong>用于SPF验证，防止邮件被标记为垃圾邮件</li>
+                        </ul>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-info me-2" onclick="showDNSInfo()">
+                    <i class="bi bi-info-circle me-1"></i>
+                    DNS配置说明
+                </button>
+                <button type="button" class="btn btn-primary" onclick="addDomain()">添加域名</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- DNS解析说明模态框 -->
+<div class="modal fade" id="dnsInfoModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-info-circle me-2"></i>
+                    DNS解析配置说明
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    <strong>重要提示：</strong> 请在您的域名DNS管理面板中添加以下记录，然后等待DNS传播完成（通常需要几分钟到几小时）。
+                </div>
+
+                <div class="row">
+                    <div class="col-12">
+                        <div class="card mb-3">
+                            <div class="card-header bg-primary text-white">
+                                <i class="bi bi-envelope me-2"></i>
+                                MX记录（邮件交换记录）
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-3"><strong>类型:</strong> MX</div>
+                                    <div class="col-md-3"><strong>名称:</strong> @</div>
+                                    <div class="col-md-4"><strong>值:</strong> <span id="mxValue">您的域名</span></div>
+                                    <div class="col-md-2"><strong>优先级:</strong> 10</div>
+                                </div>
+                                <div class="row mt-2">
+                                    <div class="col-md-3"><strong>TTL:</strong> 3600</div>
+                                </div>
+                                <div class="mt-2 text-muted">
+                                    <small>邮件交换记录，用于接收邮件</small>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="card mb-3">
+                            <div class="card-header bg-success text-white">
+                                <i class="bi bi-globe me-2"></i>
+                                A记录（域名解析记录）
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-3"><strong>类型:</strong> A</div>
+                                    <div class="col-md-3"><strong>名称:</strong> @</div>
+                                    <div class="col-md-4"><strong>值:</strong> <span id="aValue">服务器公网IP</span></div>
+                                    <div class="col-md-2"></div>
+                                </div>
+                                <div class="row mt-2">
+                                    <div class="col-md-3"><strong>TTL:</strong> 3600</div>
+                                </div>
+                                <div class="mt-2 text-muted">
+                                    <small>A记录，将域名指向服务器IP</small>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="card mb-3">
+                            <div class="card-header bg-warning text-dark">
+                                <i class="bi bi-shield-check me-2"></i>
+                                TXT记录（SPF记录，可选）
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-3"><strong>类型:</strong> TXT</div>
+                                    <div class="col-md-3"><strong>名称:</strong> @</div>
+                                    <div class="col-md-6"><strong>值:</strong> <span id="txtValue">v=spf1 ip4:服务器公网IP ~all</span></div>
+                                </div>
+                                <div class="row mt-2">
+                                    <div class="col-md-3"><strong>TTL:</strong> 3600</div>
+                                </div>
+                                <div class="mt-2 text-muted">
+                                    <small>SPF记录，防止邮件被标记为垃圾邮件</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="alert alert-info mt-3">
+                    <h6><i class="bi bi-lightbulb me-2"></i>DNS解析说明：</h6>
+                    <ul class="mb-0">
+                        <li><strong>MX记录：</strong> 指定邮件服务器，告诉其他邮件服务器将邮件发送到哪里</li>
+                        <li><strong>A记录：</strong> 将域名解析到服务器的IP地址</li>
+                        <li><strong>TXT记录：</strong> 用于SPF验证，提高邮件送达率，防止被识别为垃圾邮件</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                <button type="button" class="btn btn-primary" onclick="verifyDNS()">
+                    <i class="bi bi-search me-1"></i>
+                    验证DNS解析
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- DNS记录查看模态框 -->
+<div class="modal fade" id="dnsRecordsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-dns me-2"></i>
+                    DNS记录详情
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="dnsRecordsContent">
+                <!-- DNS记录内容将在这里动态加载 -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+<script src="/static/js/common.js"></script>
+<script>
+let domains = [];
+
+// 页面加载时获取域名列表
+document.addEventListener('DOMContentLoaded', function() {
+    loadDomains();
+});
+
+// 加载域名列表
+async function loadDomains() {
+    try {
+        console.log('开始加载域名列表...');
+        console.log('API对象:', API);
+
+        const response = await API.get('/admin/domains');
+        console.log('API响应:', response);
+
+        if (response.success) {
+            domains = response.data || [];
+            console.log('域名数据:', domains);
+            renderDomainsTable();
+        } else {
+            console.error('API返回失败:', response);
+            Utils.showAlert('加载域名列表失败: ' + (response.message || '未知错误'), 'danger');
+        }
+    } catch (error) {
+        console.error('Failed to load domains:', error);
+        Utils.showAlert('加载域名列表失败: ' + error.message, 'danger');
+
+        // 显示空状态
+        const tbody = document.getElementById('domainsTable');
+        if (tbody) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="7" class="text-center text-muted">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        加载失败，请刷新页面重试
+                    </td>
+                </tr>
+            `;
+        }
+    }
+}
+
+// 渲染域名表格
+function renderDomainsTable() {
+    console.log('开始渲染域名表格...');
+    const tbody = document.getElementById('domainsTable');
+    const actionsDiv = document.getElementById('domainActions');
+    console.log('表格元素:', tbody);
+    console.log('域名数量:', domains.length);
+
+    if (!tbody) {
+        console.error('找不到domainsTable元素');
+        return;
+    }
+
+    if (domains.length === 0) {
+        console.log('域名列表为空，显示空状态');
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="8" class="text-center text-muted">
+                    <i class="bi bi-inbox me-2"></i>
+                    暂无域名
+                </td>
+            </tr>
+        `;
+        actionsDiv.style.display = 'none';
+        return;
+    }
+
+    // 显示操作按钮
+    actionsDiv.style.display = 'block';
+
+    tbody.innerHTML = domains.map(domain => `
+        <tr data-domain-id="${domain.id}">
+            <td>
+                <input type="checkbox" class="form-check-input domain-checkbox" value="${domain.id}"
+                       onclick="updateSelectedDomainsCount()">
+            </td>
+            <td>
+                <strong>${domain.name}</strong>
+            </td>
+            <td>
+                ${domain.is_verified ?
+                    '<span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>已验证</span>' :
+                    '<span class="badge bg-warning"><i class="bi bi-exclamation-triangle me-1"></i>未验证</span>'
+                }
+            </td>
+            <td><code>${domain.mx_record || '-'}</code></td>
+            <td><code>${domain.a_record || '-'}</code></td>
+            <td><code>${domain.txt_record ? (domain.txt_record.length > 20 ? domain.txt_record.substring(0, 20) + '...' : domain.txt_record) : '-'}</code></td>
+            <td>${Utils.formatDate(domain.created_at)}</td>
+            <td>
+                <div class="btn-group btn-group-sm">
+                    <button class="btn btn-outline-success" onclick="showDNSConfigForDomain('${domain.name}')" title="DNS配置说明">
+                        <i class="bi bi-gear"></i>
+                    </button>
+                    <button class="btn btn-outline-primary" onclick="verifyDomain(${domain.id})" title="验证DNS">
+                        <i class="bi bi-arrow-clockwise"></i>
+                    </button>
+                    <button class="btn btn-outline-info" onclick="viewDNSRecords('${domain.name}')" title="查看DNS记录">
+                        <i class="bi bi-eye"></i>
+                    </button>
+                    <button class="btn btn-outline-danger" onclick="deleteDomain(${domain.id})" title="删除">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </div>
+            </td>
+        </tr>
+    `).join('');
+
+    updateSelectedDomainsCount();
+}
+
+// 添加域名
+async function addDomain() {
+    const form = document.getElementById('addDomainForm');
+    const formData = new FormData(form);
+    const data = Object.fromEntries(formData);
+    
+    if (!data.name) {
+        Utils.showAlert('请输入域名', 'warning');
+        return;
+    }
+    
+    try {
+        const response = await API.post('/admin/domains', data);
+        if (response.success) {
+            Utils.showAlert('域名添加成功', 'success');
+            bootstrap.Modal.getInstance(document.getElementById('addDomainModal')).hide();
+            form.reset();
+            loadDomains();
+        }
+    } catch (error) {
+        console.error('Failed to add domain:', error);
+        Utils.showAlert(error.message || '添加域名失败', 'danger');
+    }
+}
+
+// 验证域名
+async function verifyDomain(domainId) {
+    try {
+        const response = await API.post(`/admin/domains/${domainId}/verify`);
+        if (response.success) {
+            Utils.showAlert(response.message, response.data.is_verified ? 'success' : 'warning');
+            loadDomains();
+        }
+    } catch (error) {
+        console.error('Failed to verify domain:', error);
+        Utils.showAlert(error.message || '验证域名失败', 'danger');
+    }
+}
+
+// 查看DNS记录
+async function viewDNSRecords(domainName) {
+    const modal = new bootstrap.Modal(document.getElementById('dnsRecordsModal'));
+    const content = document.getElementById('dnsRecordsContent');
+    
+    content.innerHTML = `
+        <div class="text-center">
+            <div class="spinner-border" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2">正在查询DNS记录...</p>
+        </div>
+    `;
+    
+    modal.show();
+    
+    try {
+        const response = await API.get(`/domains/dns?domain=${domainName}`);
+        if (response.success) {
+            const records = response.data.records;
+            let html = `<h6>域名: <code>${domainName}</code></h6><hr>`;
+            
+            for (const [type, values] of Object.entries(records)) {
+                html += `
+                    <div class="mb-3">
+                        <h6 class="text-primary">${type} 记录</h6>
+                        <ul class="list-unstyled">
+                `;
+                
+                values.forEach(value => {
+                    html += `<li><code>${value}</code></li>`;
+                });
+                
+                html += `</ul></div>`;
+            }
+            
+            if (Object.keys(records).length === 0) {
+                html += '<p class="text-muted">未找到DNS记录</p>';
+            }
+            
+            content.innerHTML = html;
+        }
+    } catch (error) {
+        console.error('Failed to get DNS records:', error);
+        content.innerHTML = `
+            <div class="alert alert-danger">
+                <i class="bi bi-exclamation-triangle me-2"></i>
+                查询DNS记录失败: ${error.message}
+            </div>
+        `;
+    }
+}
+
+// 删除域名
+async function deleteDomain(domainId) {
+    if (!confirm('确定要删除这个域名吗？此操作不可恢复。')) {
+        return;
+    }
+    
+    try {
+        const response = await API.delete(`/admin/domains/${domainId}`);
+        if (response.success) {
+            Utils.showAlert('域名删除成功', 'success');
+            loadDomains();
+        }
+    } catch (error) {
+        console.error('Failed to delete domain:', error);
+        Utils.showAlert(error.message || '删除域名失败', 'danger');
+    }
+}
+
+// 显示DNS配置说明
+function showDNSInfo() {
+    const modal = new bootstrap.Modal(document.getElementById('dnsInfoModal'));
+    modal.show();
+}
+
+// 为特定域名显示DNS配置说明
+function showDNSConfigForDomain(domainName) {
+    // 更新模态框中的域名和IP信息
+    document.getElementById('mxValue').textContent = domainName;
+    document.getElementById('aValue').textContent = '您的服务器公网IP';
+    document.getElementById('txtValue').textContent = `v=spf1 ip4:您的服务器公网IP ~all`;
+
+    const modal = new bootstrap.Modal(document.getElementById('dnsInfoModal'));
+    modal.show();
+}
+
+// 验证DNS解析
+async function verifyDNS() {
+    const domainName = document.getElementById('mxValue').textContent;
+    if (!domainName || domainName === '您的域名') {
+        Utils.showAlert('请先选择一个域名', 'warning');
+        return;
+    }
+
+    try {
+        // 显示加载状态
+        const verifyBtn = document.querySelector('#dnsInfoModal .btn-primary');
+        const originalText = verifyBtn.innerHTML;
+        verifyBtn.innerHTML = '<i class="bi bi-arrow-repeat spin me-1"></i>验证中...';
+        verifyBtn.disabled = true;
+
+        const response = await API.get(`/domains/dns?domain=${encodeURIComponent(domainName)}`);
+
+        if (response.success) {
+            const records = response.data.records;
+
+            // 检查各种记录是否存在
+            const hasMX = records.MX && records.MX.length > 0;
+            const hasA = records.A && records.A.length > 0;
+            const hasTXT = records.TXT && records.TXT.length > 0;
+
+            // 显示验证结果
+            const alertDiv = document.createElement('div');
+            alertDiv.className = hasMX && hasA ? 'alert alert-success mt-3' : 'alert alert-warning mt-3';
+            alertDiv.innerHTML = `
+                <i class="bi bi-${hasMX && hasA ? 'check-circle' : 'exclamation-triangle'} me-2"></i>
+                <strong>DNS查询结果：</strong>
+                <ul class="mb-0 mt-2">
+                    <li>MX记录: ${hasMX ? '✓ 已配置 (' + records.MX.join(', ') + ')' : '✗ 未配置'}</li>
+                    <li>A记录: ${hasA ? '✓ 已配置 (' + records.A.join(', ') + ')' : '✗ 未配置'}</li>
+                    <li>TXT记录: ${hasTXT ? '✓ 已配置 (' + records.TXT.length + ' 条记录)' : '✗ 未配置'}</li>
+                </ul>
+                ${!hasMX || !hasA ? '<div class="mt-2"><small class="text-muted">请确保MX记录和A记录都已正确配置</small></div>' : ''}
+            `;
+
+            // 移除之前的验证结果
+            const existingAlert = document.querySelector('#dnsInfoModal .alert-success, #dnsInfoModal .alert-warning, #dnsInfoModal .alert-danger');
+            if (existingAlert) {
+                existingAlert.remove();
+            }
+
+            document.querySelector('#dnsInfoModal .modal-body').appendChild(alertDiv);
+        } else {
+            throw new Error(response.message || 'DNS查询失败');
+        }
+    } catch (error) {
+        console.error('DNS verification failed:', error);
+
+        const alertDiv = document.createElement('div');
+        alertDiv.className = 'alert alert-danger mt-3';
+        alertDiv.innerHTML = `
+            <i class="bi bi-exclamation-triangle me-2"></i>
+            <strong>DNS查询失败：</strong> ${error.message}
+        `;
+
+        // 移除之前的验证结果
+        const existingAlert = document.querySelector('#dnsInfoModal .alert-success, #dnsInfoModal .alert-warning, #dnsInfoModal .alert-danger');
+        if (existingAlert) {
+            existingAlert.remove();
+        }
+
+        document.querySelector('#dnsInfoModal .modal-body').appendChild(alertDiv);
+    } finally {
+        // 恢复按钮状态
+        const verifyBtn = document.querySelector('#dnsInfoModal .btn-primary');
+        verifyBtn.innerHTML = '<i class="bi bi-search me-1"></i>验证DNS解析';
+        verifyBtn.disabled = false;
+    }
+}
+
+// 批量操作函数
+function selectAllDomains() {
+    const checkboxes = document.querySelectorAll('.domain-checkbox');
+    const selectAllCheckbox = document.getElementById('selectAllDomainsCheckbox');
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = true;
+    });
+    selectAllCheckbox.checked = true;
+    updateSelectedDomainsCount();
+}
+
+function unselectAllDomains() {
+    const checkboxes = document.querySelectorAll('.domain-checkbox');
+    const selectAllCheckbox = document.getElementById('selectAllDomainsCheckbox');
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = false;
+    });
+    selectAllCheckbox.checked = false;
+    updateSelectedDomainsCount();
+}
+
+function toggleAllDomains(checked) {
+    const checkboxes = document.querySelectorAll('.domain-checkbox');
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = checked;
+    });
+    updateSelectedDomainsCount();
+}
+
+function updateSelectedDomainsCount() {
+    const selectedCheckboxes = document.querySelectorAll('.domain-checkbox:checked');
+    const count = selectedCheckboxes.length;
+    const selectAllCheckbox = document.getElementById('selectAllDomainsCheckbox');
+
+    // 更新全选复选框状态
+    const allCheckboxes = document.querySelectorAll('.domain-checkbox');
+    if (count === 0) {
+        selectAllCheckbox.indeterminate = false;
+        selectAllCheckbox.checked = false;
+    } else if (count === allCheckboxes.length) {
+        selectAllCheckbox.indeterminate = false;
+        selectAllCheckbox.checked = true;
+    } else {
+        selectAllCheckbox.indeterminate = true;
+    }
+
+    console.log(`已选中 ${count} 个域名`);
+}
+
+function getSelectedDomainIds() {
+    const selectedCheckboxes = document.querySelectorAll('.domain-checkbox:checked');
+    return Array.from(selectedCheckboxes).map(checkbox => parseInt(checkbox.value));
+}
+
+async function verifySelectedDomains() {
+    const selectedIds = getSelectedDomainIds();
+
+    if (selectedIds.length === 0) {
+        Utils.showAlert('请先选择要验证的域名', 'warning');
+        return;
+    }
+
+    if (!confirm(`确定要验证选中的 ${selectedIds.length} 个域名吗？`)) {
+        return;
+    }
+
+    try {
+        let successCount = 0;
+        let failCount = 0;
+
+        for (const domainId of selectedIds) {
+            try {
+                await API.post(`/admin/domains/${domainId}/verify`);
+                successCount++;
+            } catch (error) {
+                failCount++;
+                console.error(`验证域名 ${domainId} 失败:`, error);
+            }
+        }
+
+        if (successCount > 0) {
+            Utils.showAlert(`成功验证 ${successCount} 个域名${failCount > 0 ? `，${failCount} 个失败` : ''}`, 'success');
+        } else {
+            Utils.showAlert('所有域名验证失败', 'danger');
+        }
+
+        loadDomains();
+    } catch (error) {
+        console.error('批量验证域名失败:', error);
+        Utils.showAlert('批量验证域名失败，请重试', 'danger');
+    }
+}
+
+async function deleteSelectedDomains() {
+    const selectedIds = getSelectedDomainIds();
+
+    if (selectedIds.length === 0) {
+        Utils.showAlert('请先选择要删除的域名', 'warning');
+        return;
+    }
+
+    if (!confirm(`确定要删除选中的 ${selectedIds.length} 个域名吗？此操作不可恢复！`)) {
+        return;
+    }
+
+    try {
+        let successCount = 0;
+        let failCount = 0;
+
+        for (const domainId of selectedIds) {
+            try {
+                await API.delete(`/admin/domains/${domainId}`);
+                successCount++;
+            } catch (error) {
+                failCount++;
+                console.error(`删除域名 ${domainId} 失败:`, error);
+            }
+        }
+
+        if (successCount > 0) {
+            Utils.showAlert(`成功删除 ${successCount} 个域名${failCount > 0 ? `，${failCount} 个失败` : ''}`, 'success');
+        } else {
+            Utils.showAlert('所有域名删除失败', 'danger');
+        }
+
+        loadDomains();
+    } catch (error) {
+        console.error('批量删除域名失败:', error);
+        Utils.showAlert('批量删除域名失败，请重试', 'danger');
+    }
+}
+
+async function deleteAllDomains() {
+    if (domains.length === 0) {
+        Utils.showAlert('没有域名可删除', 'warning');
+        return;
+    }
+
+    if (!confirm(`确定要删除所有 ${domains.length} 个域名吗？此操作不可恢复！`)) {
+        return;
+    }
+
+    try {
+        let successCount = 0;
+        let failCount = 0;
+
+        for (const domain of domains) {
+            try {
+                await API.delete(`/admin/domains/${domain.id}`);
+                successCount++;
+            } catch (error) {
+                failCount++;
+                console.error(`删除域名 ${domain.id} 失败:`, error);
+            }
+        }
+
+        if (successCount > 0) {
+            Utils.showAlert(`成功删除 ${successCount} 个域名${failCount > 0 ? `，${failCount} 个失败` : ''}`, 'success');
+        } else {
+            Utils.showAlert('所有域名删除失败', 'danger');
+        }
+
+        loadDomains();
+    } catch (error) {
+        console.error('删除所有域名失败:', error);
+        Utils.showAlert('删除域名失败，请重试', 'danger');
+    }
+}
+
+// 退出登录
+async function logout() {
+    try {
+        await API.post('/logout');
+        window.location.href = '/admin/login';
+    } catch (error) {
+        window.location.href = '/admin/login';
+    }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,2166 @@
+package email
+
+import (
+	"bufio"
+	"bytes"
+	"database/sql"
+	"encoding/base64"
+	"fmt"
+	"io"
+	"log"
+	"mime/quotedprintable"
+	"net"
+	"regexp"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+	"unicode/utf8"
+
+	"golang.org/x/crypto/bcrypt"
+	"golang.org/x/text/encoding"
+
+	"golang.org/x/text/encoding/charmap"
+	"golang.org/x/text/encoding/japanese"
+	"golang.org/x/text/encoding/korean"
+	"golang.org/x/text/encoding/simplifiedchinese"
+	"golang.org/x/text/encoding/traditionalchinese"
+	"golang.org/x/text/transform"
+	"miko-email/internal/services
+
+	"miko-email/internal/models"
+)
+
+// ConnectionTracker 连接跟踪器
+type ConnectionTracker struct {
+	connections map[string][]time.Time
+	mutex       sync.RWMutex
+}
+
+// NewConnectionTracker 创建连接跟踪器
+func NewConnectionTracker() *ConnectionTracker {
+	return &ConnectionTracker{
+		connections: make(map[string][]time.Time),
+	}
+}
+
+// IsAllowed 检查IP是否允许连接
+func (ct *ConnectionTracker) IsAllowed(ip string) bool {
+	ct.mutex.Lock()
+	defer ct.mutex.Unlock()
+
+	now := time.Now()
+
+	// 清理过期的连接记录（超过1小时）
+	if times, exists := ct.connections[ip]; exists {
+		var validTimes []time.Time
+		for _, t := range times {
+			if now.Sub(t) < time.Hour {
+				validTimes = append(validTimes, t)
+			}
+		}
+		ct.connections[ip] = validTimes
+	}
+
+	// 检查最近5分钟内的连接次数
+	recentConnections := 0
+	if times, exists := ct.connections[ip]; exists {
+		for _, t := range times {
+			if now.Sub(t) < 5*time.Minute {
+				recentConnections++
+			}
+		}
+	}
+
+	// 如果5分钟内连接超过10次，拒绝连接
+	if recentConnections >= 10 {
+		log.Printf("IP %s 连接过于频繁，已被阻止", ip)
+		return false
+	}
+
+	// 记录新连接
+	ct.connections[ip] = append(ct.connections[ip], now)
+	return true
+}
+
+type Service struct {
+	db             *sql.DB
+	tracker        *ConnectionTracker
+	forwardService *forward.Service
+	smtpClient     *smtp.OutboundClient
+}
+
+func NewService(db *sql.DB) *Service {
+	return &Service{
+		db:             db,
+		tracker:        NewConnectionTracker(),
+		forwardService: forward.NewService(db),
+		smtpClient:     smtp.NewOutboundClientWithDB(db), // 使用数据库动态获取域名
+	}
+}
+
+// StartSMTPServer 启动SMTP服务器
+func (s *Service) StartSMTPServer(port string) error {
+	log.Printf("SMTP server starting on port %s", port)
+	
+
+	listener, err := net.Listen("tcp", ":"+port)
+	if err != nil {
+		return fmt.Errorf("failed to start SMTP server: %w", err)
+	}
+	defer listener.Close()
+
+	log.Printf("SMTP server listening on port %s", port)
+
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			log.Printf("SMTP connection error: %v", err)
+			continue
+		}
+
+		go s.handleSMTPConnection(conn)
+	}
+}
+
+// StartIMAPServer 启动IMAP服务器
+func (s *Service) StartIMAPServer(port string) error {
+	log.Printf("IMAP server starting on port %s", port)
+	
+
+	if err != nil {
+		return fmt.Errorf("failed to start IMAP server: %w", err)
+	}
+	defer listener.Close()
+
+	log.Printf("IMAP server listening on port %s", port)
+
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			log.Printf("IMAP connection error: %v", err)
+			continue
+		}
+
+		go s.handleIMAPConnection(conn)
+	}
+}
+
+// StartPOP3Server 启动POP3服务器
+func (s *Service) StartPOP3Server(port string) error {
+	log.Printf("POP3 server starting on port %s", port)
+	
+
+	if err != nil {
+		return fmt.Errorf("failed to start POP3 server: %w", err)
+	}
+	defer listener.Close()
+
+	log.Printf("POP3 server listening on port %s", port)
+
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			log.Printf("POP3 connection error: %v", err)
+			continue
+		}
+
+		go s.handlePOP3Connection(conn)
+	}
+}
+
+// handleSMTPConnection 处理SMTP连接
+func (s *Service) handleSMTPConnection(conn net.Conn) {
+	defer conn.Close()
+
+	// 获取客户端IP
+	clientIP := strings.Split(conn.RemoteAddr().String(), ":")[0]
+
+	// 检查IP是否被允许连接
+	if !s.tracker.IsAllowed(clientIP) {
+		log.Printf("拒绝来自 %s 的连接（连接过于频繁）", conn.RemoteAddr())
+		return
+	}
+
+	log.Printf("新的SMTP连接: %s", conn.RemoteAddr())
+
+	// 设置连接超时
+	conn.SetDeadline(time.Now().Add(5 * time.Minute))
+
+	reader := bufio.NewReader(conn)
+	writer := bufio.NewWriter(conn)
+
+	// 发送欢迎消息
+	s.writeResponse(writer, 220, "jbjj.site Miko Email SMTP Server Ready")
+
+	session := &SMTPSession{
+		conn:   conn,
+		reader: reader,
+		writer: writer,
+		server: s,
+	}
+
+	session.handle()
+}
+
+// writeResponse 写入SMTP响应
+func (s *Service) writeResponse(writer *bufio.Writer, code int, message string) error {
+	response := fmt.Sprintf("%d %s\r\n", code, message)
+	_, err := writer.WriteString(response)
+	if err != nil {
+		return err
+	}
+	return writer.Flush()
+}
+
+// authenticateUser 验证用户
+func (s *Service) authenticateUser(username, password string) bool {
+	// 首先尝试邮箱认证（mailboxes表）
+	var storedPassword string
+	err := s.db.QueryRow("SELECT password FROM mailboxes WHERE email = ? AND is_active = 1", username).Scan(&storedPassword)
+	if err == nil {
+		// 邮箱认证：直接比较密码（假设邮箱密码是明文存储的）
+		return storedPassword == password
+	}
+
+	// 如果邮箱认证失败，尝试用户认证（users表）
+	err = s.db.QueryRow("SELECT password FROM users WHERE email = ?", username).Scan(&storedPassword)
+	if err != nil {
+		log.Printf("用户认证失败: %v", err)
+		return false
+	}
+
+	// 用户认证：使用bcrypt验证密码
+	err = bcrypt.CompareHashAndPassword([]byte(storedPassword), []byte(password))
+	return err == nil
+}
+
+// SMTPSession SMTP会话
+type SMTPSession struct {
+	conn          net.Conn
+	reader        *bufio.Reader
+	writer        *bufio.Writer
+	server        *Service
+	helo          string
+	from          string
+	to            []string
+	data          []byte
+	username      string
+	password      string
+	authenticated bool
+}
+
+// handle 处理SMTP会话
+func (session *SMTPSession) handle() {
+	for {
+		line, err := session.reader.ReadString('\n')
+		if err != nil {
+			log.Printf("读取命令失败: %v", err)
+			return
+		}
+
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		log.Printf("SMTP命令: %s", line)
+
+		parts := strings.SplitN(line, " ", 2)
+		command := strings.ToUpper(parts[0])
+		var args string
+		if len(parts) > 1 {
+			args = parts[1]
+		}
+
+		switch command {
+		case "HELO", "EHLO":
+			session.handleHelo(args)
+		case "AUTH":
+			session.handleAuth(args)
+		case "MAIL":
+			session.handleMail(args)
+		case "RCPT":
+			session.handleRcpt(args)
+		case "DATA":
+			session.handleData()
+		case "QUIT":
+			log.Printf("客户端请求断开连接: %s", session.conn.RemoteAddr())
+			session.writeResponse(221, "Bye")
+			return
+		case "RSET":
+			log.Printf("客户端重置会话: %s", session.conn.RemoteAddr())
+			session.reset()
+			session.writeResponse(250, "OK")
+		case "NOOP":
+			session.writeResponse(250, "OK")
+		case ".":
+			// 处理单独的点号命令（可能是DATA结束标记的误用）
+			log.Printf("收到单独的点号命令，可能是协议错误: %s", session.conn.RemoteAddr())
+			log.Printf("当前会话状态 - From: %s, To: %v", session.from, session.to)
+			// 更宽容的处理，返回OK而不是错误，避免断开连接
+			session.writeResponse(250, "OK")
+		default:
+			log.Printf("未识别的SMTP命令: %s (来自 %s)", command, session.conn.RemoteAddr())
+			session.writeResponse(500, "Command not recognized")
+		}
+	}
+}
+
+// writeResponse 写入响应
+func (session *SMTPSession) writeResponse(code int, message string) error {
+	return session.server.writeResponse(session.writer, code, message)
+}
+
+// handleHelo 处理HELO/EHLO命令
+func (session *SMTPSession) handleHelo(args string) {
+	session.helo = args
+	log.Printf("SMTP握手: %s (来自 %s)", args, session.conn.RemoteAddr())
+	// 简单的EHLO响应，支持AUTH扩展
+	session.writer.WriteString("250-Hello " + args + "\r\n")
+	session.writer.WriteString("250-AUTH PLAIN LOGIN\r\n")
+	session.writer.WriteString("250 8BITMIME\r\n")
+	session.writer.Flush()
+}
+
+// IMAPSession IMAP会话
+type IMAPSession struct {
+	conn     net.Conn
+	conn    net.Conn
+	reader  *bufio.Reader
+	writer  *bufio.Writer
+	server  *Service
+	state   string // NOTAUTHENTICATED, AUTHENTICATED, SELECTED
+	user    string
+	mailbox string
+	tag     string
+
+// POP3Session POP3会话
+type POP3Session struct {
+	conn      net.Conn
+	reader    *bufio.Reader
+	writer    *bufio.Writer
+	server    *Service
+	state     string // AUTHORIZATION, TRANSACTION, UPDATE
+	user      string
+	mailboxID int
+	emails    []POP3Email
+	deleted   map[int]bool
+}
+
+// POP3Email POP3邮件信息
+type POP3Email struct {
+	ID      int
+	Size    int
+	Subject string
+	From    string
+	To      string
+	Date    string
+	Body    string
+}
+
+// handleIMAPConnection 处理IMAP连接
+func (s *Service) handleIMAPConnection(conn net.Conn) {
+	defer conn.Close()
+
+	log.Printf("新的IMAP连接: %s", conn.RemoteAddr())
+
+	// 设置连接超时
+	conn.SetDeadline(time.Now().Add(30 * time.Minute))
+
+	reader := bufio.NewReader(conn)
+	writer := bufio.NewWriter(conn)
+
+	session := &IMAPSession{
+		conn:   conn,
+		reader: reader,
+		writer: writer,
+		server: s,
+		state:  "NOTAUTHENTICATED",
+	}
+
+	// 发送欢迎消息
+	session.writeResponse("* OK Miko Email IMAP Server Ready")
+
+	session.handle()
+}
+
+// handle 处理IMAP会话
+func (session *IMAPSession) handle() {
+	for {
+		line, _, err := session.reader.ReadLine()
+		if err != nil {
+			log.Printf("读取命令失败: %v", err)
+			return
+		}
+
+		command := strings.TrimSpace(string(line))
+		if command == "" {
+			continue
+		}
+
+		log.Printf("IMAP命令: %s", command)
+
+		parts := strings.Fields(command)
+		if len(parts) < 2 {
+			session.writeResponse("* BAD Invalid command")
+			continue
+		}
+
+		tag := parts[0]
+		cmd := strings.ToUpper(parts[1])
+		args := parts[2:]
+
+		session.tag = tag
+
+		switch cmd {
+		case "CAPABILITY":
+			session.handleCapability()
+		case "LOGIN":
+			session.handleLogin(args)
+		case "LIST":
+			session.handleList(args)
+		case "SELECT":
+			session.handleSelect(args)
+		case "SEARCH":
+			session.handleSearch(args)
+		case "FETCH":
+			session.handleFetch(args)
+		case "LOGOUT":
+			session.handleLogout()
+			return
+		default:
+			session.writeTaggedResponse("BAD Command not implemented")
+		}
+	}
+}
+
+// writeResponse 写入响应
+func (session *IMAPSession) writeResponse(response string) {
+	session.writer.WriteString(response + "\r\n")
+	session.writer.Flush()
+}
+
+// writeTaggedResponse 写入带标签的响应
+func (session *IMAPSession) writeTaggedResponse(response string) {
+	session.writeResponse(session.tag + " " + response)
+}
+
+// handleCapability 处理CAPABILITY命令
+func (session *IMAPSession) handleCapability() {
+	session.writeResponse("* CAPABILITY IMAP4rev1 AUTH=PLAIN AUTH=LOGIN")
+	session.writeTaggedResponse("OK CAPABILITY completed")
+}
+
+// handleLogin 处理LOGIN命令
+func (session *IMAPSession) handleLogin(args []string) {
+	if len(args) < 2 {
+		session.writeTaggedResponse("BAD LOGIN requires username and password")
+		return
+	}
+
+	username := strings.Trim(args[0], "\"")
+	password := strings.Trim(args[1], "\"")
+
+	// 支持多种认证方式
+	if session.authenticateIMAPUser(username, password) {
+		session.state = "AUTHENTICATED"
+		session.user = username
+		log.Printf("IMAP登录成功: %s", username)
+		session.writeTaggedResponse("OK LOGIN completed")
+	} else {
+		log.Printf("IMAP登录失败: %s", username)
+		session.writeTaggedResponse("NO LOGIN failed")
+	}
+}
+
+// authenticateIMAPUser IMAP用户认证（支持多种认证方式）
+func (session *IMAPSession) authenticateIMAPUser(username, password string) bool {
+	log.Printf("IMAP认证开始: 用户名=%s", username)
+
+	// 方式1: 直接邮箱认证 (邮箱地址 + 邮箱密码)
+	log.Printf("尝试方式1: 直接邮箱认证")
+	if session.authenticateByMailbox(username, password) {
+		log.Printf("方式1认证成功")
+		return true
+	}
+
+	// 方式2: 组合认证 (网站账号@邮箱地址 + 邮箱密码)
+	// 格式: "网站用户名@邮箱地址" + "邮箱密码"
+	log.Printf("尝试方式2: 组合认证")
+	if strings.Contains(username, "@") {
+		parts := strings.Split(username, "@")
+		log.Printf("用户名分割结果: %v", parts)
+		if len(parts) >= 2 {
+			// 重新组合邮箱地址
+			emailParts := parts[1:]
+			emailAddr := strings.Join(emailParts, "@")
+			websiteUser := parts[0]
+
+			log.Printf("解析结果: 网站用户=%s, 邮箱地址=%s", websiteUser, emailAddr)
+
+			// 验证邮箱和密码
+			if session.authenticateByMailbox(emailAddr, password) {
+				log.Printf("邮箱密码验证成功")
+				// 同时验证网站用户是否有权限访问该邮箱
+				if session.verifyUserMailboxAccess(websiteUser, emailAddr) {
+					log.Printf("组合认证成功: 网站用户=%s, 邮箱=%s", websiteUser, emailAddr)
+					return true
+				} else {
+					log.Printf("用户权限验证失败")
+				}
+			} else {
+				log.Printf("邮箱密码验证失败")
+			}
+		}
+	}
+
+	// 方式3: 网站用户认证 (网站用户名 + 网站密码)
+	log.Printf("尝试方式3: 网站用户认证")
+	if session.authenticateByWebsiteUser(username, password) {
+		log.Printf("方式3认证成功")
+		return true
+	}
+
+	log.Printf("所有认证方式都失败")
+	return false
+}
+
+// authenticateByMailbox 通过邮箱认证
+func (session *IMAPSession) authenticateByMailbox(email, password string) bool {
+	var storedPassword string
+	var mailboxID int
+	err := session.server.db.QueryRow("SELECT id, password FROM mailboxes WHERE email = ? AND is_active = 1", email).Scan(&mailboxID, &storedPassword)
+	if err != nil {
+		return false
+	}
+
+	return storedPassword == password
+}
+
+// verifyUserMailboxAccess 验证网站用户是否有权限访问指定邮箱
+func (session *IMAPSession) verifyUserMailboxAccess(websiteUser, email string) bool {
+	var count int
+	err := session.server.db.QueryRow(`
+		SELECT COUNT(*) FROM mailboxes m
+		JOIN users u ON m.user_id = u.id
+		WHERE m.email = ? AND u.username = ? AND m.is_active = 1
+	`, email, websiteUser).Scan(&count)
+
+	if err != nil {
+		log.Printf("验证用户邮箱权限失败: %v", err)
+		return false
+	}
+
+	log.Printf("用户权限验证: 网站用户=%s, 邮箱=%s, 匹配数量=%d", websiteUser, email, count)
+	return count > 0
+}
+
+// authenticateByWebsiteUser 通过网站用户认证
+func (session *IMAPSession) authenticateByWebsiteUser(username, password string) bool {
+	var storedPassword string
+	err := session.server.db.QueryRow("SELECT password FROM users WHERE email = ?", username).Scan(&storedPassword)
+	if err != nil {
+		return false
+	}
+
+	// 使用bcrypt验证密码
+	err = bcrypt.CompareHashAndPassword([]byte(storedPassword), []byte(password))
+	return err == nil
+}
+
+// handleList 处理LIST命令
+func (session *IMAPSession) handleList(args []string) {
+	if session.state != "AUTHENTICATED" && session.state != "SELECTED" {
+		session.writeTaggedResponse("NO Not authenticated")
+		return
+	}
+
+	session.writeResponse("* LIST () \"/\" \"INBOX\"")
+	session.writeTaggedResponse("OK LIST completed")
+}
+
+// handleSelect 处理SELECT命令
+func (session *IMAPSession) handleSelect(args []string) {
+	if session.state != "AUTHENTICATED" && session.state != "SELECTED" {
+		session.writeTaggedResponse("NO Not authenticated")
+		return
+	}
+
+	if len(args) < 1 {
+		session.writeTaggedResponse("BAD SELECT requires mailbox name")
+		return
+	}
+
+	mailbox := strings.Trim(args[0], "\"")
+	if strings.ToUpper(mailbox) != "INBOX" {
+		session.writeTaggedResponse("NO Mailbox does not exist")
+		return
+	}
+
+	// 获取邮件数量 - 查询收件箱邮件
+	var count int
+	err := session.server.db.QueryRow(`
+		SELECT COUNT(*) FROM emails e
+		JOIN mailboxes m ON e.mailbox_id = m.id
+		WHERE m.email = ? AND e.folder = 'inbox'
+	`, session.user).Scan(&count)
+	if err != nil {
+		log.Printf("查询邮件数量失败: %v", err)
+		count = 0
+	}
+
+	session.state = "SELECTED"
+	session.mailbox = "INBOX"
+
+	session.writeResponse(fmt.Sprintf("* %d EXISTS", count))
+	session.writeResponse("* 0 RECENT")
+	session.writeResponse("* OK [UIDVALIDITY 1] UIDs valid")
+	session.writeTaggedResponse("OK [READ-WRITE] SELECT completed")
+}
+
+// handleSearch 处理SEARCH命令
+func (session *IMAPSession) handleSearch(args []string) {
+	if session.state != "SELECTED" {
+		session.writeTaggedResponse("NO Not selected")
+		return
+	}
+
+	// 简化实现，支持基本的SEARCH命令
+	// 目前只支持 "ALL" 搜索
+	if len(args) == 0 || strings.ToUpper(args[0]) != "ALL" {
+		session.writeTaggedResponse("BAD SEARCH command requires ALL parameter")
+		return
+	}
+
+	// 查询用户的所有邮件ID
+	rows, err := session.server.db.Query(`
+		SELECT e.id FROM emails e
+		JOIN mailboxes m ON e.mailbox_id = m.id
+		WHERE m.email = ? AND e.folder = 'inbox'
+		ORDER BY e.created_at DESC
+	`, session.user)
+	if err != nil {
+		log.Printf("SEARCH查询失败: %v", err)
+		session.writeTaggedResponse("NO SEARCH failed")
+		return
+	}
+	defer rows.Close()
+
+	var emailIDs []string
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			continue
+		}
+		emailIDs = append(emailIDs, fmt.Sprintf("%d", id))
+	}
+
+	// 返回搜索结果
+	if len(emailIDs) > 0 {
+		session.writeResponse("* SEARCH " + strings.Join(emailIDs, " "))
+	} else {
+		session.writeResponse("* SEARCH")
+	}
+	session.writeTaggedResponse("OK SEARCH completed")
+}
+
+// handleFetch 处理FETCH命令
+func (session *IMAPSession) handleFetch(args []string) {
+	if session.state != "SELECTED" {
+		session.writeTaggedResponse("NO Not selected")
+		return
+	}
+
+	if len(args) < 2 {
+		session.writeTaggedResponse("BAD FETCH requires sequence set and data items")
+		return
+	}
+
+	// 解析参数
+	dataItems := strings.Join(args[1:], " ")
+
+	// 查询邮件数据
+	rows, err := session.server.db.Query(`
+		SELECT e.id, e.from_addr, e.to_addr, e.subject, e.body, e.created_at
+		FROM emails e
+		JOIN mailboxes m ON e.mailbox_id = m.id
+		WHERE m.email = ? AND e.folder = 'inbox'
+		ORDER BY e.created_at DESC LIMIT 10
+	`, session.user)
+	if err != nil {
+		session.writeTaggedResponse("NO FETCH failed")
+		return
+	}
+	defer rows.Close()
+
+	seqNum := 1
+	for rows.Next() {
+		var id int
+		var sender, recipient, subject, body, createdAt string
+		if err := rows.Scan(&id, &sender, &recipient, &subject, &body, &createdAt); err != nil {
+			continue
+		}
+
+		// 根据请求的数据项返回不同的信息
+		if strings.Contains(dataItems, "RFC822") {
+			// 构造完整的邮件内容
+			emailContent := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nDate: %s\r\n\r\n%s",
+				sender, recipient, subject, createdAt, body)
+
+			// 返回RFC822格式的邮件
+			session.writeResponse(fmt.Sprintf("* %d FETCH (RFC822 {%d}", seqNum, len(emailContent)))
+			session.writer.WriteString(emailContent)
+			session.writer.WriteString(")\r\n")
+			session.writer.Flush()
+		} else {
+			// 返回基本信息
+			session.writeResponse(fmt.Sprintf("* %d FETCH (UID %d RFC822.SIZE %d ENVELOPE (\"%s\" \"%s\" ((\"%s\" NIL \"%s\" NIL)) NIL NIL NIL NIL NIL))",
+				seqNum, id, len(body), createdAt, subject, sender, sender))
+		}
+		seqNum++
+	}
+
+	session.writeTaggedResponse("OK FETCH completed")
+}
+
+// handleLogout 处理LOGOUT命令
+func (session *IMAPSession) handleLogout() {
+	session.writeResponse("* BYE Miko Email IMAP Server logging out")
+	session.writeTaggedResponse("OK LOGOUT completed")
+}
+
+// handleAuth 处理AUTH命令
+func (session *SMTPSession) handleAuth(args string) {
+	parts := strings.Fields(args)
+	if len(parts) == 0 {
+		session.writeResponse(501, "Syntax error")
+		return
+	}
+
+	method := strings.ToUpper(parts[0])
+	switch method {
+	case "PLAIN":
+		if len(parts) == 2 {
+			// AUTH PLAIN with credentials
+			session.handleAuthPlain(parts[1])
+		} else {
+			// AUTH PLAIN without credentials, request them
+			session.writeResponse(334, "")
+			line, _, err := session.reader.ReadLine()
+			if err != nil {
+				session.writeResponse(535, "Authentication failed")
+				return
+			}
+			session.handleAuthPlain(string(line))
+		}
+	case "LOGIN":
+		session.handleAuthLogin()
+	default:
+		session.writeResponse(504, "Authentication mechanism not supported")
+	}
+}
+
+// handleAuthPlain 处理PLAIN认证
+func (session *SMTPSession) handleAuthPlain(credentials string) {
+	// PLAIN认证格式: base64(username\0username\0password)
+	decoded, err := base64.StdEncoding.DecodeString(credentials)
+	if err != nil {
+		session.writeResponse(535, "Authentication failed")
+		return
+	}
+
+	parts := strings.Split(string(decoded), "\x00")
+	if len(parts) != 3 {
+		session.writeResponse(535, "Authentication failed")
+		return
+	}
+
+	username := parts[1]
+	password := parts[2]
+
+	// 验证用户名和密码
+	if session.server.authenticateUser(username, password) {
+		session.authenticated = true
+		session.username = username
+		session.writeResponse(235, "Authentication successful")
+	} else {
+		session.writeResponse(535, "Authentication failed")
+	}
+}
+
+// handleAuthLogin 处理LOGIN认证
+func (session *SMTPSession) handleAuthLogin() {
+	// 请求用户名
+	session.writeResponse(334, base64.StdEncoding.EncodeToString([]byte("Username:")))
+
+	line, _, err := session.reader.ReadLine()
+	if err != nil {
+		session.writeResponse(535, "Authentication failed")
+		return
+	}
+
+	usernameBytes, err := base64.StdEncoding.DecodeString(string(line))
+	if err != nil {
+		session.writeResponse(535, "Authentication failed")
+		return
+	}
+	username := string(usernameBytes)
+
+	// 请求密码
+	session.writeResponse(334, base64.StdEncoding.EncodeToString([]byte("Password:")))
+
+	line, _, err = session.reader.ReadLine()
+	if err != nil {
+		session.writeResponse(535, "Authentication failed")
+		return
+	}
+
+	passwordBytes, err := base64.StdEncoding.DecodeString(string(line))
+	if err != nil {
+		session.writeResponse(535, "Authentication failed")
+		return
+	}
+	password := string(passwordBytes)
+
+	// 验证用户名和密码
+	if session.server.authenticateUser(username, password) {
+		session.authenticated = true
+		session.username = username
+		session.writeResponse(235, "Authentication successful")
+	} else {
+		session.writeResponse(535, "Authentication failed")
+	}
+}
+
+// handlePOP3Connection 处理POP3连接
+func (s *Service) handlePOP3Connection(conn net.Conn) {
+	defer conn.Close()
+
+	log.Printf("新的POP3连接: %s", conn.RemoteAddr())
+
+	// 设置连接超时
+	conn.SetDeadline(time.Now().Add(30 * time.Minute))
+
+	reader := bufio.NewReader(conn)
+	writer := bufio.NewWriter(conn)
+
+	session := &POP3Session{
+		conn:    conn,
+		reader:  reader,
+		writer:  writer,
+		server:  s,
+		state:   "AUTHORIZATION",
+		deleted: make(map[int]bool),
+	}
+
+	// 发送欢迎消息
+	session.writeResponse("+OK Miko Email POP3 Server Ready")
+
+	session.handle()
+}
+
+// handle 处理POP3会话
+func (session *POP3Session) handle() {
+	for {
+		line, _, err := session.reader.ReadLine()
+		if err != nil {
+			log.Printf("读取POP3命令失败: %v", err)
+			return
+		}
+
+		command := strings.TrimSpace(string(line))
+		if command == "" {
+			continue
+		}
+
+		log.Printf("POP3命令: %s", command)
+
+		parts := strings.Fields(command)
+		if len(parts) == 0 {
+			session.writeResponse("-ERR Invalid command")
+			continue
+		}
+
+		cmd := strings.ToUpper(parts[0])
+		args := parts[1:]
+
+		switch session.state {
+		case "AUTHORIZATION":
+			switch cmd {
+			case "USER":
+				session.handleUser(args)
+			case "PASS":
+				session.handlePass(args)
+			case "QUIT":
+				session.handleQuit()
+				return
+			default:
+				session.writeResponse("-ERR Command not available in AUTHORIZATION state")
+			}
+		case "TRANSACTION":
+			switch cmd {
+			case "STAT":
+				session.handleStat()
+			case "LIST":
+				session.handleList(args)
+			case "RETR":
+				session.handleRetr(args)
+			case "DELE":
+				session.handleDele(args)
+			case "NOOP":
+				session.handleNoop()
+			case "RSET":
+				session.handleRset()
+			case "TOP":
+				session.handleTop(args)
+			case "UIDL":
+				session.handleUidl(args)
+			case "QUIT":
+				session.handleQuit()
+				return
+			default:
+				session.writeResponse("-ERR Command not recognized")
+			}
+		}
+	}
+}
+
+// writeResponse 写入POP3响应
+func (session *POP3Session) writeResponse(response string) {
+	session.writer.WriteString(response + "\r\n")
+	session.writer.Flush()
+}
+
+// handleUser 处理USER命令
+func (session *POP3Session) handleUser(args []string) {
+	if len(args) != 1 {
+		session.writeResponse("-ERR USER requires username")
+		return
+	}
+
+	session.user = args[0]
+	session.writeResponse("+OK User accepted")
+}
+
+// handlePass 处理PASS命令
+func (session *POP3Session) handlePass(args []string) {
+	if len(args) != 1 {
+		session.writeResponse("-ERR PASS requires password")
+		return
+	}
+
+	if session.user == "" {
+		session.writeResponse("-ERR USER required first")
+		return
+	}
+
+	password := args[0]
+
+	// 验证用户凭据 - 从mailboxes表查询
+	var storedPassword string
+	var mailboxID int
+	err := session.server.db.QueryRow("SELECT id, password FROM mailboxes WHERE email = ?", session.user).Scan(&mailboxID, &storedPassword)
+	if err != nil {
+		log.Printf("POP3登录失败 - 邮箱不存在: %s, 错误: %v", session.user, err)
+		session.writeResponse("-ERR Authentication failed")
+		return
+	}
+
+	// 验证密码
+	if storedPassword != password {
+		log.Printf("POP3登录失败 - 密码错误: %s", session.user)
+		session.writeResponse("-ERR Authentication failed")
+		return
+	}
+
+	session.mailboxID = mailboxID
+	session.state = "TRANSACTION"
+
+	// 加载邮件列表
+	err = session.loadEmails()
+	if err != nil {
+		log.Printf("POP3加载邮件失败: %v", err)
+		session.writeResponse("-ERR Failed to load mailbox")
+		return
+	}
+
+	log.Printf("POP3登录成功: %s", session.user)
+	session.writeResponse(fmt.Sprintf("+OK Mailbox ready, %d messages", len(session.emails)))
+}
+
+// loadEmails 加载邮件列表
+func (session *POP3Session) loadEmails() error {
+	rows, err := session.server.db.Query(`
+		SELECT id, from_addr, to_addr, subject, body, created_at
+		FROM emails
+		WHERE mailbox_id = ? AND folder = 'inbox'
+		ORDER BY created_at ASC
+	`, session.mailboxID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	session.emails = []POP3Email{}
+	for rows.Next() {
+		var email POP3Email
+		var createdAt string
+		err := rows.Scan(&email.ID, &email.From, &email.To, &email.Subject, &email.Body, &createdAt)
+		if err != nil {
+			continue
+		}
+
+		email.Date = createdAt
+		email.Size = len(email.Body) + len(email.Subject) + len(email.From) + len(email.To) + 100 // 估算大小
+		session.emails = append(session.emails, email)
+	}
+
+	return nil
+}
+
+// handleStat 处理STAT命令
+func (session *POP3Session) handleStat() {
+	totalSize := 0
+	count := 0
+	for i, email := range session.emails {
+		if !session.deleted[i+1] {
+			totalSize += email.Size
+			count++
+		}
+	}
+	session.writeResponse(fmt.Sprintf("+OK %d %d", count, totalSize))
+}
+
+// handleList 处理LIST命令
+func (session *POP3Session) handleList(args []string) {
+	if len(args) == 0 {
+		// 列出所有邮件
+		session.writeResponse("+OK")
+
+		// 发送邮件列表
+		for i, email := range session.emails {
+			if !session.deleted[i+1] {
+				line := fmt.Sprintf("%d %d", i+1, email.Size)
+				session.writer.WriteString(line + "\r\n")
+			}
+		}
+
+		// 发送结束标记
+		session.writer.WriteString(".\r\n")
+		session.writer.Flush()
+	} else {
+		// 列出指定邮件
+		msgNum, err := strconv.Atoi(args[0])
+		if err != nil || msgNum < 1 || msgNum > len(session.emails) {
+			session.writeResponse("-ERR Invalid message number")
+			return
+		}
+
+		if session.deleted[msgNum] {
+			session.writeResponse("-ERR Message deleted")
+			return
+		}
+
+		email := session.emails[msgNum-1]
+		session.writeResponse(fmt.Sprintf("+OK %d %d", msgNum, email.Size))
+	}
+}
+
+// handleRetr 处理RETR命令
+func (session *POP3Session) handleRetr(args []string) {
+	if len(args) != 1 {
+		session.writeResponse("-ERR RETR requires message number")
+		return
+	}
+
+	msgNum, err := strconv.Atoi(args[0])
+	if err != nil || msgNum < 1 || msgNum > len(session.emails) {
+		session.writeResponse("-ERR Invalid message number")
+		return
+	}
+
+	if session.deleted[msgNum] {
+		session.writeResponse("-ERR Message deleted")
+		return
+	}
+
+	email := session.emails[msgNum-1]
+
+	// 构造完整的邮件内容
+	emailContent := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nDate: %s\r\n\r\n%s",
+		email.From, email.To, email.Subject, email.Date, email.Body)
+
+	session.writeResponse(fmt.Sprintf("+OK %d octets", len(emailContent)))
+
+	// 发送邮件内容
+	session.writer.WriteString(emailContent)
+
+	// 确保邮件内容以换行结束，然后发送结束标记
+	if !strings.HasSuffix(emailContent, "\r\n") {
+		session.writer.WriteString("\r\n")
+	}
+	session.writer.WriteString(".\r\n")
+	session.writer.Flush()
+}
+
+// handleDele 处理DELE命令
+func (session *POP3Session) handleDele(args []string) {
+	if len(args) != 1 {
+		session.writeResponse("-ERR DELE requires message number")
+		return
+	}
+
+	msgNum, err := strconv.Atoi(args[0])
+	if err != nil || msgNum < 1 || msgNum > len(session.emails) {
+		session.writeResponse("-ERR Invalid message number")
+		return
+	}
+
+	if session.deleted[msgNum] {
+		session.writeResponse("-ERR Message already deleted")
+		return
+	}
+
+	session.deleted[msgNum] = true
+	session.writeResponse("+OK Message deleted")
+}
+
+// handleNoop 处理NOOP命令
+func (session *POP3Session) handleNoop() {
+	session.writeResponse("+OK")
+}
+
+// handleRset 处理RSET命令
+func (session *POP3Session) handleRset() {
+	session.deleted = make(map[int]bool)
+	session.writeResponse("+OK")
+}
+
+// handleTop 处理TOP命令
+func (session *POP3Session) handleTop(args []string) {
+	if len(args) != 2 {
+		session.writeResponse("-ERR TOP requires message number and line count")
+		return
+	}
+
+	msgNum, err := strconv.Atoi(args[0])
+	if err != nil || msgNum < 1 || msgNum > len(session.emails) {
+		session.writeResponse("-ERR Invalid message number")
+		return
+	}
+
+	lines, err := strconv.Atoi(args[1])
+	if err != nil || lines < 0 {
+		session.writeResponse("-ERR Invalid line count")
+		return
+	}
+
+	if session.deleted[msgNum] {
+		session.writeResponse("-ERR Message deleted")
+		return
+	}
+
+	email := session.emails[msgNum-1]
+
+	// 构造邮件头
+	header := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nDate: %s\r\n\r\n",
+		email.From, email.To, email.Subject, email.Date)
+
+	// 获取指定行数的正文
+	bodyLines := strings.Split(email.Body, "\n")
+	if lines > len(bodyLines) {
+		lines = len(bodyLines)
+	}
+
+	body := strings.Join(bodyLines[:lines], "\n")
+	content := header + body
+
+	session.writeResponse("+OK")
+	session.writer.WriteString(content)
+
+	// 确保内容以换行结束，然后发送结束标记
+	if !strings.HasSuffix(content, "\r\n") {
+		session.writer.WriteString("\r\n")
+	}
+	session.writer.WriteString(".\r\n")
+	session.writer.Flush()
+}
+
+// handleUidl 处理UIDL命令
+func (session *POP3Session) handleUidl(args []string) {
+	if len(args) == 0 {
+		// 列出所有邮件的UIDL
+		session.writeResponse("+OK")
+
+		// 发送UIDL列表
+		for i, email := range session.emails {
+			if !session.deleted[i+1] {
+				line := fmt.Sprintf("%d %d", i+1, email.ID)
+				session.writer.WriteString(line + "\r\n")
+			}
+		}
+
+		// 发送结束标记
+		session.writer.WriteString(".\r\n")
+		session.writer.Flush()
+	} else {
+		// 列出指定邮件的UIDL
+		msgNum, err := strconv.Atoi(args[0])
+		if err != nil || msgNum < 1 || msgNum > len(session.emails) {
+			session.writeResponse("-ERR Invalid message number")
+			return
+		}
+
+		if session.deleted[msgNum] {
+			session.writeResponse("-ERR Message deleted")
+			return
+		}
+
+		email := session.emails[msgNum-1]
+		session.writeResponse(fmt.Sprintf("+OK %d %d", msgNum, email.ID))
+	}
+}
+
+// handleQuit 处理QUIT命令
+func (session *POP3Session) handleQuit() {
+	if session.state == "TRANSACTION" {
+		// 在UPDATE状态下删除标记为删除的邮件
+		for msgNum := range session.deleted {
+			if msgNum > 0 && msgNum <= len(session.emails) {
+				email := session.emails[msgNum-1]
+				_, err := session.server.db.Exec("DELETE FROM emails WHERE id = ?", email.ID)
+				if err != nil {
+					log.Printf("删除邮件失败: %v", err)
+				} else {
+					log.Printf("已删除邮件 ID: %d", email.ID)
+				}
+			}
+		}
+	}
+
+	session.writeResponse("+OK Miko Email POP3 Server signing off")
+}
+
+// handleMail 处理MAIL FROM命令
+func (session *SMTPSession) handleMail(args string) {
+	if !strings.HasPrefix(strings.ToUpper(args), "FROM:") {
+		session.writeResponse(501, "Syntax error")
+		return
+	}
+
+	// 提取FROM:后面的内容
+	fromPart := strings.TrimSpace(args[5:])
+
+	// 处理可能的参数，如 BODY=8BITMIME
+	parts := strings.Fields(fromPart)
+	if len(parts) > 0 {
+		from := strings.Trim(parts[0], "<>")
+
+		// 检查发件人权限
+		if !session.canSendFrom(from) {
+			log.Printf("发件人权限不足: %s (来自 %s)", from, session.conn.RemoteAddr())
+			session.writeResponse(550, "Authentication required or sender not authorized")
+			return
+		}
+
+		session.from = from
+		log.Printf("设置发件人: %s (来自 %s)", from, session.conn.RemoteAddr())
+	} else {
+		log.Printf("MAIL FROM语法错误: %s (来自 %s)", args, session.conn.RemoteAddr())
+		session.writeResponse(501, "Syntax error")
+		return
+	}
+
+	session.writeResponse(250, "OK")
+}
+
+// handleRcpt 处理RCPT TO命令
+func (session *SMTPSession) handleRcpt(args string) {
+	if !strings.HasPrefix(strings.ToUpper(args), "TO:") {
+		session.writeResponse(501, "Syntax error")
+		return
+	}
+
+	to := strings.TrimSpace(args[3:])
+	to = strings.Trim(to, "<>")
+
+	// 检查收件人是否为本域用户
+	if session.isLocalUser(to) {
+		// 本域用户，允许接收
+		session.to = append(session.to, to)
+		log.Printf("添加本域收件人: %s (来自 %s)", to, session.conn.RemoteAddr())
+		session.writeResponse(250, "OK")
+		return
+	}
+
+	// 外部邮箱，需要认证才能发送
+	if !session.isValidExternalEmail(to) {
+		log.Printf("无效的收件人地址: %s (来自 %s)", to, session.conn.RemoteAddr())
+		session.writeResponse(550, "Invalid recipient address")
+		return
+	}
+
+	// 检查是否有权限发送到外部邮箱
+	if !session.authenticated {
+		log.Printf("未认证用户尝试发送到外部邮箱: %s (来自 %s)", to, session.conn.RemoteAddr())
+		session.writeResponse(550, "Authentication required for external delivery")
+		return
+	}
+
+	session.to = append(session.to, to)
+	log.Printf("添加外部收件人: %s (来自 %s)", to, session.conn.RemoteAddr())
+	session.writeResponse(250, "OK")
+}
+
+// handleData 处理DATA命令
+func (session *SMTPSession) handleData() {
+	if session.from == "" || len(session.to) == 0 {
+		session.writeResponse(503, "Bad sequence of commands")
+		return
+	}
+
+	session.writeResponse(354, "Start mail input; end with <CRLF>.<CRLF>")
+
+	var data []byte
+	for {
+		line, err := session.reader.ReadString('\n')
+		if err != nil {
+			log.Printf("读取邮件数据失败: %v", err)
+			return
+		}
+
+		if line == ".\r\n" || line == ".\n" {
+			break
+		}
+
+		data = append(data, []byte(line)...)
+	}
+
+	session.data = data
+
+	// 保存邮件到数据库
+	if err := session.saveEmail(); err != nil {
+		log.Printf("保存邮件失败: %v", err)
+		session.writeResponse(550, "Failed to save email")
+		return
+	}
+
+	session.writeResponse(250, "OK")
+	session.reset()
+}
+
+// reset 重置会话状态
+func (session *SMTPSession) reset() {
+	session.from = ""
+	session.to = nil
+	session.data = nil
+}
+
+// isLocalUser 检查是否为本地用户
+func (session *SMTPSession) isLocalUser(email string) bool {
+	var count int
+	err := session.server.db.QueryRow("SELECT COUNT(*) FROM mailboxes WHERE email = ? AND is_active = 1", email).Scan(&count)
+	if err != nil {
+		log.Printf("查询邮箱失败: %v", err)
+		return false
+	}
+	return count > 0
+}
+
+// canSendFrom 检查是否有权限从指定地址发送邮件
+func (session *SMTPSession) canSendFrom(from string) bool {
+	// 如果已经认证，检查是否有权限使用该发件人地址
+	if session.authenticated {
+		// 检查认证用户是否有权限使用该发件人地址
+		return session.isAuthorizedSender(from)
+	}
+
+	// 如果未认证，只允许本地连接发送本域邮件（用于内部系统）
+	clientIP := strings.Split(session.conn.RemoteAddr().String(), ":")[0]
+	isLocalConnection := clientIP == "127.0.0.1" || clientIP == "::1" || clientIP == "localhost"
+
+	if isLocalConnection && session.isLocalUser(from) {
+		log.Printf("允许本地连接发送本域邮件: %s", from)
+		return true
+	}
+
+	log.Printf("未认证用户尝试发送邮件: %s (来自 %s)", from, session.conn.RemoteAddr())
+	return false
+}
+
+// isAuthorizedSender 检查认证用户是否有权限使用指定发件人地址
+func (session *SMTPSession) isAuthorizedSender(from string) bool {
+	if session.username == "" {
+		return false
+	}
+
+	// 如果认证用户就是发件人邮箱，直接允许
+	if session.username == from {
+		return true
+	}
+
+	// 检查用户是否拥有该邮箱（通过users表关联）
+	var count int
+	err := session.server.db.QueryRow(`
+		SELECT COUNT(*) FROM mailboxes m
+		JOIN users u ON m.user_id = u.id
+		WHERE m.email = ? AND u.email = ? AND m.is_active = 1
+	`, from, session.username).Scan(&count)
+
+	if err != nil {
+		log.Printf("检查发件人权限失败: %v", err)
+		return false
+	}
+
+	return count > 0
+}
+
+// isValidExternalEmail 检查是否为有效的外部邮箱
+func (session *SMTPSession) isValidExternalEmail(email string) bool {
+	// 基本的邮箱格式验证
+	if !strings.Contains(email, "@") {
+		return false
+	}
+
+	parts := strings.Split(email, "@")
+	if len(parts) != 2 {
+		return false
+	}
+
+	domain := parts[1]
+	if domain == "" {
+		return false
+	}
+
+	// 检查是否为本地域名
+	localDomains := []string{"localhost", "jbjj.site"}
+	for _, localDomain := range localDomains {
+		if domain == localDomain {
+			return false // 本地域名应该通过 isLocalUser 检查
+		}
+	}
+
+	// 简单的域名格式验证
+	if len(domain) < 3 || !strings.Contains(domain, ".") {
+		return false
+	}
+
+	return true
+}
+
+// sendToExternalEmail 发送邮件到外部邮箱
+func (s *Service) sendToExternalEmail(from, to, subject, body string) error {
+	// 使用SMTP客户端发送到外部邮箱
+	if s.smtpClient != nil && s.smtpClient.IsExternalEmail(to) {
+		err := s.smtpClient.SendEmail(from, to, subject, body)
+		if err != nil {
+			log.Printf("外部邮箱发送失败: %v", err)
+			return fmt.Errorf("外部邮箱发送失败: %w", err)
+		}
+		log.Printf("✅ 外部邮箱发送成功: %s -> %s", from, to)
+		return nil
+	}
+	return fmt.Errorf("无效的外部邮箱地址: %s", to)
+}
+
+// SaveEmail 保存邮件到数据库
+func (s *Service) SaveEmail(mailboxID int, fromAddr, toAddr, subject, body string) error {
+	_, err := s.db.Exec(`
+		INSERT INTO emails (mailbox_id, from_addr, to_addr, subject, body, folder, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, 'inbox', ?, ?)
+	`, mailboxID, fromAddr, toAddr, subject, body, time.Now(), time.Now())
+
+	return err
+}
+
+// saveEmail 保存邮件到数据库
+func (session *SMTPSession) saveEmail() error {
+	// 解析邮件内容
+	subject, body := session.parseEmailContent()
+
+	// 调试日志
+	log.Printf("解析后的邮件 - Subject: %s, Body: %s", subject, body)
+
+	// 为每个收件人处理邮件
+	for _, to := range session.to {
+		if session.isLocalUser(to) {
+			// 本地用户，保存到数据库
+			var mailboxID int
+			err := session.server.db.QueryRow("SELECT id FROM mailboxes WHERE email = ? AND is_active = 1", to).Scan(&mailboxID)
+			if err != nil {
+				log.Printf("获取邮箱ID失败: %v", err)
+				continue
+			}
+
+			// 插入邮件记录
+			log.Printf("准备插入数据库 - Body: %s", body)
+			_, err = session.server.db.Exec(`
+				INSERT INTO emails (mailbox_id, from_addr, to_addr, subject, body, folder, created_at, updated_at)
+				VALUES (?, ?, ?, ?, ?, 'inbox', ?, ?)
+			`, mailboxID, session.from, to, subject, body, time.Now(), time.Now())
+
+			if err != nil {
+				log.Printf("插入邮件记录失败: %v", err)
+				return err
+			}
+
+			log.Printf("✅ 邮件保存成功 - 邮箱ID: %d, 主题: %s", mailboxID, subject)
+
+			// 检查并执行转发规则
+			session.server.processForwardRules(to, session.from, subject, body)
+		} else {
+			// 外部邮箱，发送到外部
+			log.Printf("发送邮件到外部邮箱: %s", to)
+			err := session.server.sendToExternalEmail(session.from, to, subject, body)
+			if err != nil {
+				log.Printf("外部邮件发送失败: %v", err)
+				return err
+			}
+			log.Printf("✅ 外部邮件发送成功: %s -> %s", session.from, to)
+		}
+	}
+
+	return nil
+}
+
+// saveToLocalDatabase 直接保存到本地数据库（备用方法）
+func (session *SMTPSession) saveToLocalDatabase(to, subject, body string) {
+	var mailboxID int
+	err := session.server.db.QueryRow("SELECT id FROM mailboxes WHERE email = ? AND is_active = 1", to).Scan(&mailboxID)
+	if err != nil {
+		log.Printf("获取邮箱ID失败: %v", err)
+		return
+	}
+
+	// 插入邮件记录
+	_, err = session.server.db.Exec(`
+		INSERT INTO emails (mailbox_id, from_addr, to_addr, subject, body, folder, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, 'inbox', ?, ?)
+	`, mailboxID, session.from, to, subject, body, time.Now(), time.Now())
+
+	if err != nil {
+		log.Printf("备用保存失败: %v", err)
+		return
+	}
+
+	log.Printf("✅ 备用保存成功 - 邮箱ID: %d, 主题: %s", mailboxID, subject)
+
+	// 检查并执行转发规则
+	session.server.processForwardRules(to, session.from, subject, body)
+}
+
+// SaveEmailToSent 保存邮件到已发送文件夹
+func (s *Service) SaveEmailToSent(mailboxID int, fromAddr, toAddr, subject, body string) error {
+	_, err := s.db.Exec(`
+		INSERT INTO emails (mailbox_id, from_addr, to_addr, subject, body, folder, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, 'sent', ?, ?)
+	`, mailboxID, fromAddr, toAddr, subject, body, time.Now(), time.Now())
+
+	return err
+}
+
+// parseEmailContent 解析邮件内容
+func (session *SMTPSession) parseEmailContent() (subject, body string) {
+	content := string(session.data)
+	lines := strings.Split(content, "\n")
+
+	var inHeaders = true
+	var bodyLines []string
+	var contentTransferEncoding string
+	var contentType string
+	var boundary string
+
+	for _, line := range lines {
+		line = strings.TrimRight(line, "\r")
+
+		if inHeaders {
+			if line == "" {
+				inHeaders = false
+				continue
+			}
+
+			if strings.HasPrefix(strings.ToLower(line), "subject:") {
+				subject = strings.TrimSpace(line[8:])
+				// 解码Subject中的编码内容
+				subject = decodeEmailHeader(subject)
+			} else if strings.HasPrefix(strings.ToLower(line), "content-transfer-encoding:") {
+				contentTransferEncoding = strings.TrimSpace(strings.ToLower(line[26:]))
+			} else if strings.HasPrefix(strings.ToLower(line), "content-type:") {
+				contentType = strings.TrimSpace(strings.ToLower(line[13:]))
+				// 提取boundary（保持原始大小写）
+				originalLine := strings.TrimSpace(line[13:]) // 保持原始大小写
+				boundary = extractBoundaryFromContentType(originalLine)
+			}
+		} else {
+			bodyLines = append(bodyLines, line)
+		}
+	}
+
+	body = strings.Join(bodyLines, "\n")
+
+	// 处理MIME多部分邮件
+	log.Printf("Content-Type: %s, Boundary: %s", contentType, boundary)
+
+	// 如果boundary为空但内容类型是multipart，尝试从正文中自动检测boundary
+	if strings.Contains(contentType, "multipart") && boundary == "" {
+		boundary = detectBoundaryFromBody(body)
+		log.Printf("自动检测到boundary: %s", boundary)
+	}
+
+	if strings.Contains(contentType, "multipart") && boundary != "" {
+		log.Printf("处理MIME多部分邮件")
+		body = parseMIMEMultipart(body, boundary)
+	} else {
+		log.Printf("处理单部分邮件，编码: %s", contentTransferEncoding)
+		// 提取字符集
+		charset := extractCharsetFromContentType(contentType)
+
+		// 根据编码方式解码body
+		if contentTransferEncoding == "base64" {
+			cleanContent := strings.ReplaceAll(body, "\n", "")
+			cleanContent = strings.ReplaceAll(cleanContent, "\r", "")
+			cleanContent = strings.TrimSpace(cleanContent)
+			if decoded, err := base64.StdEncoding.DecodeString(cleanContent); err == nil {
+				// 进行字符编码转换
+				body = convertToUTF8(decoded, charset)
+			}
+		} else if contentTransferEncoding == "quoted-printable" {
+			// 处理quoted-printable编码
+			body = decodeQuotedPrintable(body)
+			body = convertToUTF8([]byte(body), charset)
+		} else if charset != "" && charset != "utf-8" {
+			// 如果没有传输编码但有字符集，直接进行字符编码转换
+			body = convertToUTF8([]byte(body), charset)
+		}
+	}
+
+	// 确保body是有效的UTF-8
+	if !utf8.ValidString(body) {
+		body = strings.ToValidUTF8(body, "?")
+	}
+
+	if subject == "" {
+		subject = "无主题"
+	}
+
+	return subject, body
+}
+
+// ProcessForwardRules 处理邮件转发规则（公开方法）
+func (s *Service) ProcessForwardRules(sourceEmail, fromAddr, subject, body string) {
+	s.processForwardRules(sourceEmail, fromAddr, subject, body)
+}
+
+// processForwardRules 处理邮件转发规则
+func (s *Service) processForwardRules(sourceEmail, fromAddr, subject, body string) {
+	// 获取该邮箱的活跃转发规则
+	rules, err := s.forwardService.GetActiveForwardRules(sourceEmail)
+	if err != nil {
+		log.Printf("获取转发规则失败: %v", err)
+		return
+	}
+
+	if len(rules) == 0 {
+		log.Printf("邮箱 %s 没有活跃的转发规则", sourceEmail)
+		return
+	}
+
+	log.Printf("找到 %d 个转发规则，开始处理转发", len(rules))
+
+	for _, rule := range rules {
+		log.Printf("处理转发规则: %s -> %s", rule.SourceEmail, rule.TargetEmail)
+
+		// 构建转发邮件的主题
+		forwardSubject := subject
+		if rule.SubjectPrefix != "" {
+			forwardSubject = rule.SubjectPrefix + " " + subject
+		}
+
+		// 构建转发邮件的内容
+		forwardBody := fmt.Sprintf(`
+-------- 转发邮件 --------
+发件人: %s
+收件人: %s
+主题: %s
+时间: %s
+
+%s
+`, fromAddr, sourceEmail, subject, time.Now().Format("2006-01-02 15:04:05"), body)
+
+		// 发送转发邮件
+		err := s.sendForwardEmail(rule.SourceEmail, rule.TargetEmail, forwardSubject, forwardBody)
+		if err != nil {
+			log.Printf("转发邮件失败: %v", err)
+			continue
+		}
+
+		// 更新转发次数
+		err = s.forwardService.IncrementForwardCount(rule.ID)
+		if err != nil {
+			log.Printf("更新转发次数失败: %v", err)
+		}
+
+		log.Printf("✅ 邮件转发成功: %s -> %s", rule.SourceEmail, rule.TargetEmail)
+	}
+}
+
+// sendForwardEmail 发送转发邮件
+func (s *Service) sendForwardEmail(fromAddr, toAddr, subject, body string) error {
+	// 检查目标邮箱是否是本域邮箱
+	var mailboxID int
+	err := s.db.QueryRow("SELECT id FROM mailboxes WHERE email = ? AND is_active = 1", toAddr).Scan(&mailboxID)
+
+	if err == nil {
+		// 目标是本域邮箱，直接保存到收件箱
+		log.Printf("转发到本域邮箱: %s", toAddr)
+		return s.SaveEmail(mailboxID, fromAddr, toAddr, subject, body)
+	} else if err == sql.ErrNoRows {
+		// 目标是外部邮箱，通过SMTP发送
+		log.Printf("转发到外部邮箱: %s", toAddr)
+
+		// 检查是否为外部邮箱
+		if s.smtpClient.IsExternalEmail(toAddr) {
+			// 使用SMTP客户端发送到外部邮箱
+			err := s.smtpClient.SendEmail(fromAddr, toAddr, subject, body)
+			if err != nil {
+				log.Printf("外部邮箱转发失败: %v", err)
+				return fmt.Errorf("外部邮箱转发失败: %w", err)
+			}
+			log.Printf("✅ 外部邮箱转发成功: %s -> %s", fromAddr, toAddr)
+			return nil
+		} else {
+			return fmt.Errorf("无效的外部邮箱地址: %s", toAddr)
+		}
+	} else {
+		return fmt.Errorf("查询目标邮箱失败: %w", err)
+	}
+}
+
+// decodeEmailHeader 解码邮件头部编码内容
+func decodeEmailHeader(header string) string {
+	// 使用我们自己的MIME头部解码函数，支持更多编码
+	return decodeMIMEHeaderSMTP(header)
+}
+
+// decodeMIMEHeaderSMTP 解码MIME编码的邮件头部 (=?charset?encoding?data?=) - SMTP版本
+func decodeMIMEHeaderSMTP(header string) string {
+	// MIME编码格式: =?charset?encoding?encoded-text?=
+	re := regexp.MustCompile(`=\?([^?]+)\?([BbQq])\?([^?]*)\?=`)
+
+	result := header
+	matches := re.FindAllStringSubmatch(header, -1)
+
+	for _, match := range matches {
+		if len(match) != 4 {
+			continue
+		}
+
+		fullMatch := match[0]
+		charset := strings.ToLower(match[1])
+		encoding := strings.ToUpper(match[2])
+		encodedText := match[3]
+
+		var decoded string
+
+		switch encoding {
+		case "B": // Base64编码
+			if decodedBytes, err := base64.StdEncoding.DecodeString(encodedText); err == nil {
+				decoded = convertToUTF8(decodedBytes, charset)
+			} else {
+				decoded = encodedText // 解码失败，保持原样
+			}
+		case "Q": // Quoted-printable编码
+			decoded = decodeQuotedPrintableHeaderSMTP(encodedText)
+			decoded = convertToUTF8([]byte(decoded), charset)
+		default:
+			decoded = encodedText // 未知编码，保持原样
+		}
+
+		result = strings.Replace(result, fullMatch, decoded, 1)
+	}
+
+	return result
+}
+
+// decodeQuotedPrintableHeaderSMTP 解码quoted-printable编码的头部 - SMTP版本
+func decodeQuotedPrintableHeaderSMTP(s string) string {
+	// 在头部中，下划线代表空格
+	s = strings.ReplaceAll(s, "_", " ")
+
+	result := strings.Builder{}
+	for i := 0; i < len(s); i++ {
+		if s[i] == '=' && i+2 < len(s) {
+			// 尝试解析十六进制
+			hex := s[i+1 : i+3]
+			if b, err := strconv.ParseUint(hex, 16, 8); err == nil {
+				result.WriteByte(byte(b))
+				i += 2 // 跳过已处理的字符
+			} else {
+				result.WriteByte(s[i])
+			}
+		} else {
+			result.WriteByte(s[i])
+		}
+	}
+
+	return result.String()
+}
+
+// extractBoundaryFromContentType 从Content-Type中提取boundary
+func extractBoundaryFromContentType(contentType string) string {
+	// 多种boundary格式的正则表达式
+	patterns := []string{
+		`boundary\s*=\s*"([^"]+)"`,           // boundary="value"
+		`boundary\s*=\s*"([^"]+)"`, // boundary="value"
+		`boundary\s*=\s*'([^']+)'`, // boundary='value'
+		`boundary\s*=\s*([^;\s]+)`, // boundary=value
+		`boundary\s*:\s*"([^"]+)"`, // boundary: "value"
+		`boundary\s*:\s*([^;\s]+)`, // boundary: value
+
+	for _, pattern := range patterns {
+		re := regexp.MustCompile(`(?i)` + pattern) // 不区分大小写
+		matches := re.FindStringSubmatch(contentType)
+		if len(matches) > 1 {
+			boundary := strings.TrimSpace(matches[1])
+			if boundary != "" {
+				log.Printf("提取到boundary: %s", boundary)
+				return boundary
+			}
+		}
+	}
+
+	log.Printf("未能提取boundary，Content-Type: %s", contentType)
+	return ""
+}
+
+// extractCharsetFromContentType 从Content-Type中提取字符集
+func extractCharsetFromContentType(contentType string) string {
+	// 查找charset参数
+	re := regexp.MustCompile(`charset\s*=\s*["']?([^"'\s;]+)["']?`)
+	matches := re.FindStringSubmatch(contentType)
+	if len(matches) > 1 {
+		return matches[1]
+	}
+	return "utf-8" // 默认UTF-8
+}
+
+// detectBoundaryFromBody 从邮件正文中自动检测boundary
+func detectBoundaryFromBody(body string) string {
+	lines := strings.Split(body, "\n")
+
+	// 查找以------=开头的行，这通常是boundary分隔符
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "------=") {
+			// 提取boundary（去掉前面的--）
+			if len(line) > 6 {
+				boundary := line[6:] // 去掉"------="
+				log.Printf("从正文检测到boundary: %s", boundary)
+				return boundary
+			}
+		}
+		// 检查Steam邮件和其他常见的boundary格式
+		if strings.HasPrefix(line, "--") && len(line) > 10 {
+			boundary := line[2:] // 去掉前面的"--"
+
+			// Steam邮件的boundary通常包含这些特征
+			if strings.Contains(boundary, "_") || strings.Contains(boundary, "=") ||
+			   strings.Contains(boundary, "Boundary") || strings.Contains(boundary, "boundary") ||
+				strings.Contains(boundary, "Boundary") || strings.Contains(boundary, "boundary") ||
+				len(boundary) > 15 { // 长boundary通常是有效的
+				// 验证这是一个有效的boundary
+				if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_=\-]+$`, boundary); matched {
+					log.Printf("从正文检测到boundary (Steam/通用格式): %s", boundary)
+					return boundary
+				}
+			}
+		}
+	}
+
+	log.Printf("未能从正文检测到boundary")
+	return ""
+}
+
+// getEncodingByCharset 根据字符集名称获取编码器
+func getEncodingByCharset(charset string) encoding.Encoding {
+	charset = strings.ToLower(strings.TrimSpace(charset))
+
+	switch charset {
+	case "gbk", "gb2312", "gb18030":
+		return simplifiedchinese.GBK
+	case "big5":
+		return traditionalchinese.Big5
+	case "shift_jis", "shift-jis", "sjis":
+		return japanese.ShiftJIS
+	case "euc-jp":
+		return japanese.EUCJP
+	case "iso-2022-jp":
+		return japanese.ISO2022JP
+	case "euc-kr":
+		return korean.EUCKR
+	case "iso-8859-1", "latin1":
+		return charmap.ISO8859_1
+	case "iso-8859-2", "latin2":
+		return charmap.ISO8859_2
+	case "iso-8859-15":
+		return charmap.ISO8859_15
+	case "windows-1252", "cp1252":
+		return charmap.Windows1252
+	case "windows-1251", "cp1251":
+		return charmap.Windows1251
+	case "utf-8", "utf8":
+		return nil // UTF-8不需要转换
+	default:
+		return nil // 未知编码，不转换
+	}
+}
+
+// convertToUTF8 将指定编码的字节转换为UTF-8字符串
+func convertToUTF8(data []byte, charset string) string {
+	encoder := getEncodingByCharset(charset)
+	if encoder == nil {
+		// 如果是UTF-8或未知编码，直接返回
+		return string(data)
+	}
+
+	// 创建解码器
+	decoder := encoder.NewDecoder()
+
+	// 转换为UTF-8
+	utf8Data, err := io.ReadAll(transform.NewReader(bytes.NewReader(data), decoder))
+	if err != nil {
+		log.Printf("编码转换失败 (%s): %v", charset, err)
+		// 转换失败时，尝试直接返回字符串
+		return string(data)
+	}
+
+	return string(utf8Data)
+}
+
+// decodeQuotedPrintable 解码quoted-printable编码
+func decodeQuotedPrintable(s string) string {
+	// 使用Go标准库的quoted-printable解码器
+	reader := quotedprintable.NewReader(strings.NewReader(s))
+	decoded, err := io.ReadAll(reader)
+	if err != nil {
+		log.Printf("quoted-printable解码失败，使用备用方法: %v", err)
+		// 如果标准库解码失败，使用备用方法
+		return decodeQuotedPrintableFallback(s)
+	}
+
+	result := string(decoded)
+	log.Printf("quoted-printable解码成功，原长度: %d, 解码后长度: %d", len(s), len(result))
+	return result
+}
+
+// decodeQuotedPrintableFallback 备用的quoted-printable解码实现
+func decodeQuotedPrintableFallback(s string) string {
+	result := strings.Builder{}
+	lines := strings.Split(s, "\n")
+
+	for i, line := range lines {
+		line = strings.TrimRight(line, "\r")
+
+		// 处理软换行（以=结尾的行）
+		if strings.HasSuffix(line, "=") {
+			line = line[:len(line)-1] // 移除末尾的=
+		} else if i < len(lines)-1 {
+			line += "\n" // 添加换行符（除了最后一行）
+		}
+
+		// 解码=XX格式的字符
+		for j := 0; j < len(line); j++ {
+			if line[j] == '=' && j+2 < len(line) {
+				// 尝试解析十六进制
+				hex := line[j+1 : j+3]
+				if b, err := strconv.ParseUint(hex, 16, 8); err == nil {
+					result.WriteByte(byte(b))
+					j += 2 // 跳过已处理的字符
+				} else {
+					result.WriteByte(line[j])
+				}
+			} else {
+				result.WriteByte(line[j])
+			}
+		}
+	}
+
+	return result.String()
+}
+
+// parseMIMEMultipart 解析MIME多部分邮件
+func parseMIMEMultipart(body, boundary string) string {
+	parts := strings.Split(body, "--"+boundary)
+	var textParts []string
+	var htmlParts []string
+
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" || part == "--" {
+			continue
+		}
+
+		// 分离头部和内容
+		lines := strings.Split(part, "\n")
+		var inHeaders = true
+		var contentLines []string
+		var contentType string
+		var contentTransferEncoding string
+		var charset string
+
+		for _, line := range lines {
+			line = strings.TrimRight(line, "\r")
+
+			if inHeaders {
+				if line == "" {
+					inHeaders = false
+					continue
+				}
+
+				if strings.HasPrefix(strings.ToLower(line), "content-type:") {
+					contentType = strings.TrimSpace(line[13:]) // 保持原始大小写用于提取charset
+					charset = extractCharsetFromContentType(contentType)
+					contentType = strings.ToLower(contentType) // 转为小写用于比较
+				} else if strings.HasPrefix(strings.ToLower(line), "content-transfer-encoding:") {
+					contentTransferEncoding = strings.TrimSpace(strings.ToLower(line[26:]))
+				}
+			} else {
+				// 跳过以--开头的行（boundary分隔符）
+				if !strings.HasPrefix(line, "--") {
+					contentLines = append(contentLines, line)
+				}
+			}
+		}
+
+		content := strings.Join(contentLines, "\n")
+		content = strings.TrimSpace(content)
+
+		// 根据编码方式解码内容
+		if contentTransferEncoding == "base64" {
+			cleanContent := strings.ReplaceAll(content, "\n", "")
+			cleanContent = strings.ReplaceAll(cleanContent, "\r", "")
+			cleanContent = strings.TrimSpace(cleanContent)
+			log.Printf("尝试解码base64 (charset: %s): %s", charset, cleanContent)
+			if decoded, err := base64.StdEncoding.DecodeString(cleanContent); err == nil {
+				// 先进行base64解码，然后进行字符编码转换
+				content = convertToUTF8(decoded, charset)
+				log.Printf("base64解码并转换编码成功: %s", content)
+			} else {
+				log.Printf("base64解码失败: %v", err)
+			}
+		} else if contentTransferEncoding == "quoted-printable" {
+			// 处理quoted-printable编码
+			content = decodeQuotedPrintable(content)
+			content = convertToUTF8([]byte(content), charset)
+		} else if charset != "" && charset != "utf-8" {
+			// 如果没有传输编码但有字符集，直接进行字符编码转换
+			content = convertToUTF8([]byte(content), charset)
+		}
+
+		// 根据内容类型分类
+		if strings.Contains(contentType, "text/plain") {
+			textParts = append(textParts, content)
+		} else if strings.Contains(contentType, "text/html") {
+			htmlParts = append(htmlParts, content)
+		}
+	}
+
+	// 优先返回纯文本内容，如果没有则返回HTML内容
+	if len(textParts) > 0 {
+		return strings.Join(textParts, "\n\n")
+	} else if len(htmlParts) > 0 {
+		return strings.Join(htmlParts, "\n\n")
+	}
+
+	return body // 如果解析失败，返回原始内容
+}
+
+// GetEmails 获取邮件列表
+func (s *Service) GetEmails(mailboxID int, folder string, page, limit int) ([]models.Email, int, error) {
+	offset := (page - 1) * limit
+	
+
+	var total int
+	err := s.db.QueryRow(`
+		SELECT COUNT(*) FROM emails 
+		WHERE mailbox_id = ? AND folder = ?
+	`, mailboxID, folder).Scan(&total)
+	if err != nil {
+		return nil, 0, err
+	}
+	
+
+	query := `
+		SELECT id, mailbox_id, from_addr, to_addr, subject, body, is_read, folder, created_at, updated_at
+		FROM emails 
+		WHERE mailbox_id = ? AND folder = ?
+		ORDER BY created_at DESC
+		LIMIT ? OFFSET ?
+	`
+	
+
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	
+
+	for rows.Next() {
+		var email models.Email
+		err = rows.Scan(&email.ID, &email.MailboxID, &email.FromAddr, &email.ToAddr,
+			&email.Subject, &email.Body, &email.IsRead, &email.Folder,
+			&email.CreatedAt, &email.UpdatedAt)
+		if err != nil {
+			return nil, 0, err
+		}
+		emails = append(emails, email)
+	}
+	
+
+}
+
+// GetEmailByID 根据ID获取邮件
+func (s *Service) GetEmailByID(emailID, mailboxID int) (*models.Email, error) {
+	var email models.Email
+	query := `
+		SELECT id, mailbox_id, from_addr, to_addr, subject, body, is_read, folder, created_at, updated_at
+		FROM emails 
+		WHERE id = ? AND mailbox_id = ?
+	`
+	
+
+		&email.ID, &email.MailboxID, &email.FromAddr, &email.ToAddr,
+		&email.Subject, &email.Body, &email.IsRead, &email.Folder,
+		&email.CreatedAt, &email.UpdatedAt)
+	
+
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("邮件不存在")
+		}
+		return nil, err
+	}
+	
+
+}
+
+// MarkAsRead 标记邮件为已读
+func (s *Service) MarkAsRead(emailID, mailboxID int) error {
+	_, err := s.db.Exec(`
+		UPDATE emails 
+		SET is_read = 1, updated_at = ?
+		WHERE id = ? AND mailbox_id = ?
+	`, time.Now(), emailID, mailboxID)
+	
+
+}
+
+// DeleteEmail 删除邮件
+func (s *Service) DeleteEmail(emailID, mailboxID int) error {
+	_, err := s.db.Exec(`
+		DELETE FROM emails 
+		WHERE id = ? AND mailbox_id = ?
+	`, emailID, mailboxID)
+	
+
+}
