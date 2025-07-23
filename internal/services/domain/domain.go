@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/miekg/dns"
-	
 )
 
 type Service struct {

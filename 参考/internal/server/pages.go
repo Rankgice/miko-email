@@ -4637,7 +4637,7 @@ func (s *Server) generateSMTPConfigsPageTemplate(userEmail string, isAdmin bool)
         }`
 
 	// 将样式插入到模板中
-	tmpl = strings.Replace(tmpl, "</style>", additionalStyles + "\n    </style>", 1)
+	tmpl = strings.Replace(tmpl, "</style>", additionalStyles+"\n    </style>", 1)
 
 	// 添加SMTP配置相关的JavaScript脚本到模板中
 	smtpScript := `
@@ -5215,20 +5215,8 @@ func (s *Server) generateSMTPConfigsPageTemplate(userEmail string, isAdmin bool)
     </script>`
 
 	// 将脚本插入到模板中
-	tmpl = strings.Replace(tmpl, "</body>", smtpScript + "\n    </body>", 1)
+	tmpl = strings.Replace(tmpl, "</body>", smtpScript+"\n    </body>", 1)
 
 	return tmpl
-
-
-
-
-
-
-
-
-
-
-
-
 
 }

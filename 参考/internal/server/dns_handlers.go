@@ -85,10 +85,10 @@ func (s *Server) handleVerifyDomain(c *gin.Context) {
 		Success: true,
 		Message: "DNS验证完成",
 		Data: map[string]interface{}{
-			"domain_id":    domainID,
-			"domain_name":  domain.Name,
-			"server_ip":    serverIP,
-			"dns_verified": result.Success,
+			"domain_id":           domainID,
+			"domain_name":         domain.Name,
+			"server_ip":           serverIP,
+			"dns_verified":        result.Success,
 			"verification_result": result,
 		},
 	})
@@ -228,7 +228,7 @@ func (s *Server) handleBatchVerifyDomains(c *gin.Context) {
 
 	// 创建DNS验证器
 	verifier := dns.NewDNSVerifier(serverIP)
-	
+
 	var results []map[string]interface{}
 	var successCount, failCount int
 
@@ -241,7 +241,7 @@ func (s *Server) handleBatchVerifyDomains(c *gin.Context) {
 
 		// 验证域名
 		result := verifier.VerifyDomain(domainName)
-		
+
 		// 更新数据库
 		now := time.Now()
 		mxRecord := ""

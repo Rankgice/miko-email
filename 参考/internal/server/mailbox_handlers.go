@@ -198,7 +198,7 @@ func (s *Server) handleSwitchMailbox(c *gin.Context) {
 
 	// 验证邮箱是否属于当前用户
 	var email string
-	err := s.db.QueryRow("SELECT email FROM mailboxes WHERE id = ? AND user_id = ? AND is_active = 1", 
+	err := s.db.QueryRow("SELECT email FROM mailboxes WHERE id = ? AND user_id = ? AND is_active = 1",
 		req.MailboxID, userID).Scan(&email)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -237,7 +237,7 @@ func (s *Server) handleSwitchMailbox(c *gin.Context) {
 	}
 
 	// 设置指定邮箱为当前
-	_, err = tx.Exec("UPDATE mailboxes SET is_current = 1 WHERE id = ? AND user_id = ?", 
+	_, err = tx.Exec("UPDATE mailboxes SET is_current = 1 WHERE id = ? AND user_id = ?",
 		req.MailboxID, userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, models.Response{
@@ -279,7 +279,7 @@ func (s *Server) handleDeleteMailbox(c *gin.Context) {
 
 	// 验证邮箱是否属于当前用户
 	var isCurrent bool
-	err = s.db.QueryRow("SELECT is_current FROM mailboxes WHERE id = ? AND user_id = ? AND is_active = 1", 
+	err = s.db.QueryRow("SELECT is_current FROM mailboxes WHERE id = ? AND user_id = ? AND is_active = 1",
 		mailboxID, userID).Scan(&isCurrent)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -306,7 +306,7 @@ func (s *Server) handleDeleteMailbox(c *gin.Context) {
 	}
 
 	// 软删除邮箱（设为不活跃）
-	_, err = s.db.Exec("UPDATE mailboxes SET is_active = 0 WHERE id = ? AND user_id = ?", 
+	_, err = s.db.Exec("UPDATE mailboxes SET is_active = 0 WHERE id = ? AND user_id = ?",
 		mailboxID, userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, models.Response{

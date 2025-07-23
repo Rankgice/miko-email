@@ -2131,7 +2131,7 @@ func (s *Server) generateEmailDetailPageTemplate(userEmail string, isAdmin bool,
         loadEmail();
     </script>
 </body>
-</html>`;
+</html>`
 
 	return tmpl
 }

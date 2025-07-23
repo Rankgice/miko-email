@@ -487,12 +487,12 @@ func (s *Server) handleGetSMTPConfigs(c *gin.Context) {
 	// 添加默认配置
 	if s.config.OutboundSMTPHost != "" {
 		configs = append(configs, map[string]interface{}{
-			"domain":   "default",
-			"host":     s.config.OutboundSMTPHost,
-			"port":     s.config.OutboundSMTPPort,
-			"user":     s.config.OutboundSMTPUser,
-			"password": "***", // 隐藏密码
-			"tls":      s.config.OutboundSMTPTLS,
+			"domain":     "default",
+			"host":       s.config.OutboundSMTPHost,
+			"port":       s.config.OutboundSMTPPort,
+			"user":       s.config.OutboundSMTPUser,
+			"password":   "***", // 隐藏密码
+			"tls":        s.config.OutboundSMTPTLS,
 			"is_default": true,
 		})
 	}
@@ -500,12 +500,12 @@ func (s *Server) handleGetSMTPConfigs(c *gin.Context) {
 	// 添加域名特定配置
 	for domain, smtpConfig := range s.config.DomainSMTPConfigs {
 		configs = append(configs, map[string]interface{}{
-			"domain":   domain,
-			"host":     smtpConfig.Host,
-			"port":     smtpConfig.Port,
-			"user":     smtpConfig.User,
-			"password": "***", // 隐藏密码
-			"tls":      smtpConfig.TLS,
+			"domain":     domain,
+			"host":       smtpConfig.Host,
+			"port":       smtpConfig.Port,
+			"user":       smtpConfig.User,
+			"password":   "***", // 隐藏密码
+			"tls":        smtpConfig.TLS,
 			"is_default": false,
 		})
 	}
@@ -684,12 +684,12 @@ func (s *Server) handleVerifySMTPConfig(c *gin.Context) {
 // verifySMTPDNS 验证SMTP配置的DNS记录
 func (s *Server) verifySMTPDNS(domain string, smtpConfig *config.SMTPConfig) map[string]interface{} {
 	result := map[string]interface{}{
-		"domain":      domain,
-		"smtp_host":   smtpConfig.Host,
-		"smtp_port":   smtpConfig.Port,
-		"checks":      []map[string]interface{}{},
-		"overall":     false,
-		"message":     "",
+		"domain":    domain,
+		"smtp_host": smtpConfig.Host,
+		"smtp_port": smtpConfig.Port,
+		"checks":    []map[string]interface{}{},
+		"overall":   false,
+		"message":   "",
 	}
 
 	checks := []map[string]interface{}{}
