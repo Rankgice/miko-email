@@ -14,13 +14,13 @@ import (
 
 // UserResponse 用户响应结构体
 type UserResponse struct {
-	ID           int        `json:"id"`
+	ID           int64      `json:"id"`
 	Username     string     `json:"username"`
 	Email        string     `json:"email"`
 	Status       string     `json:"status"` // 转换后的状态字符串
 	Contribution int        `json:"contribution"`
 	InviteCode   string     `json:"invite_code"`
-	InvitedBy    *int       `json:"invited_by"`
+	InvitedBy    *int64     `json:"invited_by"`
 	MailboxCount int        `json:"mailbox_count"` // 邮箱数量
 	CreatedAt    time.Time  `json:"created_at"`
 	UpdatedAt    time.Time  `json:"updated_at"`
@@ -108,7 +108,7 @@ func (h *UserHandler) GetUsers(c *gin.Context) {
 // GetUserByID 根据ID获取用户
 func (h *UserHandler) GetUserByID(c *gin.Context) {
 	userIDStr := c.Param("id")
-	userID, err := strconv.Atoi(userIDStr)
+	userID, err := strconv.ParseInt(userIDStr, 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "用户ID格式错误"})
 		return
@@ -129,7 +129,7 @@ func (h *UserHandler) GetUserByID(c *gin.Context) {
 // GetUserMailboxes 获取用户的邮箱列表
 func (h *UserHandler) GetUserMailboxes(c *gin.Context) {
 	userIDStr := c.Param("id")
-	userID, err := strconv.Atoi(userIDStr)
+	userID, err := strconv.ParseInt(userIDStr, 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "用户ID格式错误"})
 		return
@@ -150,7 +150,7 @@ func (h *UserHandler) GetUserMailboxes(c *gin.Context) {
 // UpdateUserStatus 更新用户状态
 func (h *UserHandler) UpdateUserStatus(c *gin.Context) {
 	userIDStr := c.Param("id")
-	userID, err := strconv.Atoi(userIDStr)
+	userID, err := strconv.ParseInt(userIDStr, 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "用户ID格式错误"})
 		return
@@ -194,7 +194,7 @@ func (h *UserHandler) UpdateUserStatus(c *gin.Context) {
 // DeleteUser 删除用户
 func (h *UserHandler) DeleteUser(c *gin.Context) {
 	userIDStr := c.Param("id")
-	userID, err := strconv.Atoi(userIDStr)
+	userID, err := strconv.ParseInt(userIDStr, 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "用户ID格式错误"})
 		return

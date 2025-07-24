@@ -2,18 +2,21 @@ package user
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
-	"time"
-
 	"miko-email/internal/models"
+
+	"gorm.io/gorm"
+	"miko-email/internal/model"
+	"miko-email/internal/svc"
 )
 
 type Service struct {
-	db *sql.DB
+	svcCtx *svc.ServiceContext
 }
 
-func NewService(db *sql.DB) *Service {
-	return &Service{db: db}
+func NewService(svcCtx *svc.ServiceContext) *Service {
+	return &Service{svcCtx: svcCtx}
 }
 
 // UserWithStats 用户统计信息
@@ -74,7 +77,7 @@ func (s *Service) GetUsers() ([]UserWithStats, error) {
 }
 
 // GetUserByID 根据ID获取用户
-func (s *Service) GetUserByID(userID int) (*UserWithStats, error) {
+func (s *Service) GetUserByID(userID int64) (*UserWithStats, error) {
 	query := `
 		SELECT 
 			u.id, u.username, u.email, u.is_active, u.contribution, 
@@ -116,88 +119,80 @@ func (s *Service) GetUserByID(userID int) (*UserWithStats, error) {
 }
 
 // GetUserMailboxes 获取用户的邮箱列表
-func (s *Service) GetUserMailboxes(userID int) ([]models.Mailbox, error) {
-	query := `
-		SELECT m.id, m.user_id, m.admin_id, m.email, m.domain_id, m.is_active, m.created_at, m.updated_at
-		FROM mailboxes m
-		WHERE m.user_id = ? AND m.is_active = 1
-		ORDER BY m.created_at DESC
-	`
+func (s *Service) GetUserMailboxes(userID int64) ([]*model.Mailbox, error) {
+	var params model.MailboxReq
+	isActive := true
+	params.IsActive = &isActive
+	params.UserId = &userID
 
-	rows, err := s.db.Query(query, userID)
+	mailboxes, _, err := s.svcCtx.MailboxModel.List(params)
 	if err != nil {
 		return nil, err
-	}
-	defer rows.Close()
-
-	var mailboxes []models.Mailbox
-	for rows.Next() {
-		var mailbox models.Mailbox
-		err = rows.Scan(
-			&mailbox.ID, &mailbox.UserID, &mailbox.AdminID, &mailbox.Email,
-			&mailbox.DomainID, &mailbox.IsActive, &mailbox.CreatedAt, &mailbox.UpdatedAt,
-		)
-		if err != nil {
-			return nil, err
-		}
-		mailboxes = append(mailboxes, mailbox)
 	}
 
 	return mailboxes, nil
 }
 
 // UpdateUserStatus 更新用户状态
-func (s *Service) UpdateUserStatus(userID int, isActive bool) error {
-	_, err := s.db.Exec("UPDATE users SET is_active = ?, updated_at = ? WHERE id = ?",
-		isActive, time.Now(), userID)
-	return err
+func (s *Service) UpdateUserStatus(userID int64, isActive bool) error {
+	return s.svcCtx.UserModel.UpdateStatus(nil, userID, isActive)
 }
 
 // DeleteUser 删除用户（硬删除）
-func (s *Service) DeleteUser(userID int) error {
+func (s *Service) DeleteUser(userID int64) error {
 	// 检查用户是否存在
-	var count int
-	err := s.db.QueryRow("SELECT COUNT(*) FROM users WHERE id = ?", userID).Scan(&count)
+	_, err := s.svcCtx.UserModel.GetById(userID)
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("用户不存在")
+		}
 		return err
-	}
-	if count == 0 {
-		return fmt.Errorf("用户不存在")
 	}
 
 	// 开始事务
-	tx, err := s.db.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
+	tx := s.svcCtx.DB.Begin()
+	defer func() {
+		if tx != nil {
+			tx.Rollback()
+		}
+	}()
 
-	// 1. 删除用户的邮件转发规则
-	_, err = tx.Exec(`DELETE FROM email_forwards
-		WHERE mailbox_id IN (SELECT id FROM mailboxes WHERE user_id = ?)`, userID)
-	if err != nil {
-		return err
-	}
-
-	// 2. 删除用户的邮件
-	_, err = tx.Exec(`DELETE FROM emails
-		WHERE mailbox_id IN (SELECT id FROM mailboxes WHERE user_id = ?)`, userID)
+	// 获取用户的所有邮箱
+	var params model.MailboxReq
+	params.UserId = &userID
+	mailboxes, _, err := s.svcCtx.MailboxModel.List(params)
 	if err != nil {
 		return err
 	}
 
-	// 3. 删除用户的邮箱
-	_, err = tx.Exec("DELETE FROM mailboxes WHERE user_id = ?", userID)
-	if err != nil {
-		return err
+	// 删除每个邮箱的相关数据
+	for _, mailbox := range mailboxes {
+		// 1. 删除邮件转发规则
+		if err := s.svcCtx.EmailForwardModel.DeleteForwardsByMailboxId(tx, mailbox.Id); err != nil {
+			return err
+		}
+
+		// 2. 删除邮件
+		if err := s.svcCtx.EmailModel.DeleteEmailsByMailboxId(tx, mailbox.Id); err != nil {
+			return err
+		}
+
+		// 3. 删除邮箱
+		if err := s.svcCtx.MailboxModel.HardDelete(tx, mailbox.Id); err != nil {
+			return err
+		}
 	}
 
 	// 4. 删除用户记录
-	_, err = tx.Exec("DELETE FROM users WHERE id = ?", userID)
-	if err != nil {
+	if err := s.svcCtx.UserModel.HardDelete(tx, userID); err != nil {
 		return err
 	}
 
 	// 提交事务
-	return tx.Commit()
+	if err := tx.Commit().Error; err != nil {
+		return err
+	}
+	tx = nil
+
+	return nil
 }

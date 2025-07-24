@@ -250,3 +250,12 @@ func (m *UserModel) AuthenticateUser(username string) (*User, error) {
 	}
 	return &user, nil
 }
+
+// HardDelete 硬删除用户
+func (m *UserModel) HardDelete(tx *gorm.DB, id int64) error {
+	db := m.db
+	if tx != nil {
+		db = tx
+	}
+	return db.Unscoped().Where("id = ?", id).Delete(&User{}).Error
+}
