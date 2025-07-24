@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/miekg/dns"
-	
+	"miko-email/internal/models"
 )
 
 type Service struct {

@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	
+	"miko-email/internal/models"
 )
 
 type Service struct {

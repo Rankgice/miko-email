@@ -7,7 +7,7 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 	"miko-email/internal/config"
-	
+	_ "modernc.org/sqlite"
 )
 
 func Init(dbPath string) (*sql.DB, error) {
