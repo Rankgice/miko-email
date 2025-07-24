@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.title}} - Miko邮箱系统</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="/static/css/style.css" rel="stylesheet">
+</head>
+<body>
+<div class="container-fluid">
+    <div class="row min-vh-100">
+        <!-- 侧边栏 -->
+        <div class="col-md-3 col-lg-2 sidebar">
+            <div class="d-flex flex-column h-100 p-3 bg-primary text-white">
+                <a href="/dashboard" class="d-flex align-items-center mb-3 mb-md-0 me-md-auto text-white text-decoration-none">
+                    <i class="bi bi-envelope-heart me-2"></i>
+                    <span class="fs-4">Miko邮箱</span>
+                </a>
+                <hr>
+                <ul class="nav nav-pills flex-column mb-auto">
+                    <li class="nav-item">
+                        <a href="/dashboard" class="nav-link text-white">
+                            <i class="bi bi-speedometer2 me-2"></i>
+                            仪表板
+                        </a>
+                    </li>
+                    <li>
+                        <a href="/inbox" class="nav-link text-white">
+                            <i class="bi bi-inbox me-2"></i>
+                            收件箱
+                        </a>
+                    </li>
+                    <li>
+                        <a href="/sent" class="nav-link text-white">
+                            <i class="bi bi-send me-2"></i>
+                            已发送
+                        </a>
+                    </li>
+                    <li>
+                        <a href="/compose" class="nav-link text-white">
+                            <i class="bi bi-pencil-square me-2"></i>
+                            写邮件
+                        </a>
+                    </li>
+                    <li>
+                        <a href="/forward" class="nav-link text-white">
+                            <i class="bi bi-arrow-right-circle me-2"></i>
+                            转邮件
+                        </a>
+                    </li>
+                    <li>
+                        <a href="/mailboxes" class="nav-link text-white">
+                            <i class="bi bi-collection me-2"></i>
+                            邮箱管理
+                        </a>
+                    </li>
+                    <li>
+                        <a href="/settings" class="nav-link active text-white">
+                            <i class="bi bi-gear me-2"></i>
+                            设置
+                        </a>
+                    </li>
+                </ul>
+                <hr>
+                <div class="dropdown">
+                    <a href="#" class="d-flex align-items-center text-white text-decoration-none dropdown-toggle" id="dropdownUser1" data-bs-toggle="dropdown">
+                        <i class="bi bi-person-circle me-2"></i>
+                        <strong>{{.username}}</strong>
+                    </a>
+                    <ul class="dropdown-menu dropdown-menu-dark text-small shadow">
+                        <li><a class="dropdown-item" href="/settings">个人设置</a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="#" onclick="logout()">退出登录</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- 主内容区 -->
+        <div class="col-md-9 col-lg-10 main-content">
+            <div class="container-fluid p-4">
+                <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+                    <h1 class="h2">个人设置</h1>
+                </div>
+
+                <!-- 个人信息 -->
+                <div class="row mb-4">
+                    <div class="col-12">
+                        <div class="card shadow">
+                            <div class="card-header py-3">
+                                <h6 class="m-0 font-weight-bold text-primary">个人信息</h6>
+                            </div>
+                            <div class="card-body">
+                                <form id="profileForm">
+                                    <div class="row">
+                                        <div class="col-md-6 mb-3">
+                                            <label for="username" class="form-label">用户名</label>
+                                            <input type="text" class="form-control" id="username" readonly>
+                                        </div>
+                                        <div class="col-md-6 mb-3">
+                                            <label for="email" class="form-label">邮箱地址</label>
+                                            <input type="email" class="form-control" id="email" readonly>
+                                        </div>
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-md-6 mb-3">
+                                            <label for="contribution" class="form-label">贡献度</label>
+                                            <input type="text" class="form-control" id="contribution" readonly>
+                                        </div>
+                                        <div class="col-md-6 mb-3">
+                                            <label for="inviteCode" class="form-label">邀请码</label>
+                                            <div class="input-group">
+                                                <input type="text" class="form-control" id="inviteCode" readonly>
+                                                <button class="btn btn-outline-secondary" type="button" onclick="copyInviteCode()">
+                                                    <i class="bi bi-clipboard"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 修改密码 -->
+                <div class="row mb-4">
+                    <div class="col-12">
+                        <div class="card shadow">
+                            <div class="card-header py-3">
+                                <h6 class="m-0 font-weight-bold text-primary">修改密码</h6>
+                            </div>
+                            <div class="card-body">
+                                <form id="passwordForm">
+                                    <div class="row">
+                                        <div class="col-md-4 mb-3">
+                                            <label for="currentPassword" class="form-label">当前密码</label>
+                                            <input type="password" class="form-control" id="currentPassword" required>
+                                        </div>
+                                        <div class="col-md-4 mb-3">
+                                            <label for="newPassword" class="form-label">新密码</label>
+                                            <input type="password" class="form-control" id="newPassword" required>
+                                        </div>
+                                        <div class="col-md-4 mb-3">
+                                            <label for="confirmPassword" class="form-label">确认新密码</label>
+                                            <input type="password" class="form-control" id="confirmPassword" required>
+                                        </div>
+                                    </div>
+                                    <button type="submit" class="btn btn-warning">
+                                        <i class="bi bi-key me-2"></i>
+                                        修改密码
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 账户统计 -->
+                <div class="row">
+                    <div class="col-12">
+                        <div class="card shadow">
+                            <div class="card-header py-3">
+                                <h6 class="m-0 font-weight-bold text-primary">账户统计</h6>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-3 mb-3">
+                                        <div class="text-center">
+                                            <i class="bi bi-collection display-4 text-primary"></i>
+                                            <h5 class="mt-2" id="totalMailboxes">-</h5>
+                                            <p class="text-muted">邮箱总数</p>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3 mb-3">
+                                        <div class="text-center">
+                                            <i class="bi bi-envelope display-4 text-success"></i>
+                                            <h5 class="mt-2" id="totalEmails">0</h5>
+                                            <p class="text-muted">邮件总数</p>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3 mb-3">
+                                        <div class="text-center">
+                                            <i class="bi bi-send display-4 text-info"></i>
+                                            <h5 class="mt-2" id="sentEmails">0</h5>
+                                            <p class="text-muted">已发送</p>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3 mb-3">
+                                        <div class="text-center">
+                                            <i class="bi bi-calendar display-4 text-warning"></i>
+                                            <h5 class="mt-2" id="joinDate">-</h5>
+                                            <p class="text-muted">注册时间</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 提示模态框 -->
+<div class="modal fade" id="alertModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">提示</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="alertMessage">
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+<script>
+// 页面加载时获取用户信息
+document.addEventListener('DOMContentLoaded', function() {
+    loadProfile();
+    loadStats();
+});
+
+async function loadProfile() {
+    try {
+        const response = await axios.get('/api/profile');
+        if (response.data.success) {
+            const user = response.data.data;
+            document.getElementById('username').value = user.username;
+            document.getElementById('email').value = user.email;
+            document.getElementById('contribution').value = user.contribution || 0;
+            document.getElementById('inviteCode').value = user.invite_code || '';
+            
+            // 格式化注册时间
+            if (user.created_at) {
+                const joinDate = new Date(user.created_at).toLocaleDateString('zh-CN');
+                document.getElementById('joinDate').textContent = joinDate;
+            }
+        }
+    } catch (error) {
+        console.error('Failed to load profile:', error);
+        showAlert('加载用户信息失败');
+    }
+}
+
+async function loadStats() {
+    try {
+        // 获取用户资料
+        const profileResponse = await axios.get('/api/profile');
+        if (profileResponse.data.success) {
+            const user = profileResponse.data.data;
+            document.getElementById('joinDate').textContent = new Date(user.created_at).toLocaleDateString('zh-CN');
+        }
+
+        // 获取用户统计信息
+        const statsResponse = await axios.get('/api/mailboxes/stats');
+        if (statsResponse.data.success) {
+            const stats = statsResponse.data.data;
+            document.getElementById('totalMailboxes').textContent = stats.total_mailboxes || 0;
+            document.getElementById('totalEmails').textContent = stats.total_emails || 0;
+            document.getElementById('sentEmails').textContent = stats.sent_emails || 0;
+        }
+    } catch (error) {
+        console.error('Failed to load stats:', error);
+    }
+}
+
+// 修改密码表单提交
+document.getElementById('passwordForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const currentPassword = document.getElementById('currentPassword').value;
+    const newPassword = document.getElementById('newPassword').value;
+    const confirmPassword = document.getElementById('confirmPassword').value;
+    
+    if (newPassword !== confirmPassword) {
+        showAlert('新密码和确认密码不匹配');
+        return;
+    }
+    
+    if (newPassword.length < 6) {
+        showAlert('新密码长度至少6位');
+        return;
+    }
+    
+    try {
+        const response = await axios.put('/api/profile/password', {
+            old_password: currentPassword,
+            new_password: newPassword
+        });
+        
+        if (response.data.success) {
+            showAlert('密码修改成功');
+            document.getElementById('passwordForm').reset();
+        } else {
+            showAlert(response.data.message || '密码修改失败');
+        }
+    } catch (error) {
+        console.error('Password change error:', error);
+        if (error.response && error.response.data) {
+            showAlert(error.response.data.message || '密码修改失败');
+        } else {
+            showAlert('网络错误，请稍后重试');
+        }
+    }
+});
+
+function copyInviteCode() {
+    const inviteCode = document.getElementById('inviteCode').value;
+    if (inviteCode) {
+        navigator.clipboard.writeText(inviteCode).then(() => {
+            showAlert('邀请码已复制到剪贴板');
+        }).catch(() => {
+            showAlert('复制失败，请手动复制');
+        });
+    }
+}
+
+function showAlert(message) {
+    document.getElementById('alertMessage').textContent = message;
+    const modal = new bootstrap.Modal(document.getElementById('alertModal'));
+    modal.show();
+}
+
+async function logout() {
+    try {
+        await axios.post('/api/logout');
+        window.location.href = '/login';
+    } catch (error) {
+        console.error('Logout error:', error);
+        window.location.href = '/login';
+    }
+}
+</script>
+</body>
+</html>
