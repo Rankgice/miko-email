@@ -75,7 +75,7 @@ func (s *Server) setupRoutes(svcCtx *svc.ServiceContext) {
 	// 创建服务实例
 	authService := auth.NewService(svcCtx)
 	mailboxService := mailbox.NewService(svcCtx)
-	domainService := domain.NewService(s.db)
+	domainService := domain.NewService(svcCtx)
 	userService := user.NewService(svcCtx)
 
 	// 创建处理器实例

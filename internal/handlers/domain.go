@@ -90,7 +90,7 @@ func (h *DomainHandler) CreateDomain(c *gin.Context) {
 // UpdateDomain 更新域名
 func (h *DomainHandler) UpdateDomain(c *gin.Context) {
 	domainIDStr := c.Param("id")
-	domainID, err := strconv.Atoi(domainIDStr)
+	domainID, err := strconv.ParseInt(domainIDStr, 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "域名ID格式错误"})
 		return
@@ -114,7 +114,7 @@ func (h *DomainHandler) UpdateDomain(c *gin.Context) {
 // DeleteDomain 删除域名
 func (h *DomainHandler) DeleteDomain(c *gin.Context) {
 	domainIDStr := c.Param("id")
-	domainID, err := strconv.Atoi(domainIDStr)
+	domainID, err := strconv.ParseInt(domainIDStr, 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "域名ID格式错误"})
 		return
@@ -132,7 +132,7 @@ func (h *DomainHandler) DeleteDomain(c *gin.Context) {
 // VerifyDomain 验证域名
 func (h *DomainHandler) VerifyDomain(c *gin.Context) {
 	domainIDStr := c.Param("id")
-	domainID, err := strconv.Atoi(domainIDStr)
+	domainID, err := strconv.ParseInt(domainIDStr, 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "域名ID格式错误"})
 		return

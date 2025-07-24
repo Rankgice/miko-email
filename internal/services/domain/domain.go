@@ -1,113 +1,73 @@
 package domain
 
 import (
-	"database/sql"
+	"errors"
 	"fmt"
 	"net"
 	"strings"
 	"time"
 
 	"github.com/miekg/dns"
-	"miko-email/internal/models"
+	"gorm.io/gorm"
+	"miko-email/internal/model"
+	"miko-email/internal/svc"
 )
 
 type Service struct {
-	db *sql.DB
+	svcCtx *svc.ServiceContext
 }
 
-func NewService(db *sql.DB) *Service {
-	return &Service{db: db}
+func NewService(svcCtx *svc.ServiceContext) *Service {
+	return &Service{svcCtx: svcCtx}
 }
 
 // GetDomains 获取域名列表
-func (s *Service) GetDomains() ([]models.Domain, error) {
-	query := `
-		SELECT id, name, is_verified, is_active, mx_record, a_record, txt_record, created_at, updated_at
-		FROM domains
-		ORDER BY created_at DESC
-	`
-
-	rows, err := s.db.Query(query)
+func (s *Service) GetDomains() ([]*model.Domain, error) {
+	// 使用DomainModel的List方法获取所有域名，按创建时间倒序
+	domains, _, err := s.svcCtx.DomainModel.List(model.DomainReq{})
 	if err != nil {
 		return nil, err
-	}
-	defer rows.Close()
-
-	var domains []models.Domain
-	for rows.Next() {
-		var domain models.Domain
-		err = rows.Scan(&domain.ID, &domain.Name, &domain.IsVerified, &domain.IsActive,
-			&domain.MXRecord, &domain.ARecord, &domain.TXTRecord,
-			&domain.CreatedAt, &domain.UpdatedAt)
-		if err != nil {
-			return nil, err
-		}
-		domains = append(domains, domain)
 	}
 
 	return domains, nil
 }
 
 // CreateDomain 创建域名
-func (s *Service) CreateDomain(name, mxRecord, aRecord, txtRecord string) (*models.Domain, error) {
+func (s *Service) CreateDomain(name, mxRecord, aRecord, txtRecord string) (*model.Domain, error) {
 	// 检查域名是否已存在
-	var count int
-	err := s.db.QueryRow("SELECT COUNT(*) FROM domains WHERE name = ?", name).Scan(&count)
+	exists, err := s.svcCtx.DomainModel.CheckDomainExist(name)
 	if err != nil {
 		return nil, err
 	}
-	if count > 0 {
+	if exists {
 		return nil, fmt.Errorf("域名已存在")
 	}
 
-	// 插入域名
-	result, err := s.db.Exec(`
-		INSERT INTO domains (name, mx_record, a_record, txt_record, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?)
-	`, name, mxRecord, aRecord, txtRecord, time.Now(), time.Now())
-
-	if err != nil {
-		return nil, err
-	}
-
-	domainID, err := result.LastInsertId()
-	if err != nil {
-		return nil, err
-	}
-
-	domain := &models.Domain{
-		ID:         int(domainID),
+	// 创建域名
+	domain := &model.Domain{
 		Name:       name,
 		IsVerified: false,
 		IsActive:   true,
-		MXRecord:   mxRecord,
+		MxRecord:   mxRecord,
 		ARecord:    aRecord,
-		TXTRecord:  txtRecord,
+		TxtRecord:  txtRecord,
 		CreatedAt:  time.Now(),
 		UpdatedAt:  time.Now(),
+	}
+
+	if err := s.svcCtx.DomainModel.Create(nil, domain); err != nil {
+		return nil, err
 	}
 
 	return domain, nil
 }
 
 // VerifyDomain 验证域名DNS设置
-func (s *Service) VerifyDomain(domainID int) (*models.Domain, error) {
+func (s *Service) VerifyDomain(domainID int64) (*model.Domain, error) {
 	// 获取域名信息
-	var domain models.Domain
-	query := `
-		SELECT id, name, is_verified, is_active, mx_record, a_record, txt_record, created_at, updated_at
-		FROM domains
-		WHERE id = ?
-	`
-
-	err := s.db.QueryRow(query, domainID).Scan(
-		&domain.ID, &domain.Name, &domain.IsVerified, &domain.IsActive,
-		&domain.MXRecord, &domain.ARecord, &domain.TXTRecord,
-		&domain.CreatedAt, &domain.UpdatedAt,
-	)
-
+	domain, err := s.svcCtx.DomainModel.GetById(domainID)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, fmt.Errorf("域名不存在")
 		}
 		return nil, err
@@ -117,8 +77,8 @@ func (s *Service) VerifyDomain(domainID int) (*models.Domain, error) {
 	verified := true
 
 	// 验证MX记录
-	if domain.MXRecord != "" {
-		if !s.verifyMXRecord(domain.Name, domain.MXRecord) {
+	if domain.MxRecord != "" {
+		if !s.verifyMXRecord(domain.Name, domain.MxRecord) {
 			verified = false
 		}
 	}
@@ -131,23 +91,21 @@ func (s *Service) VerifyDomain(domainID int) (*models.Domain, error) {
 	}
 
 	// 验证TXT记录
-	if domain.TXTRecord != "" {
-		if !s.verifyTXTRecord(domain.Name, domain.TXTRecord) {
+	if domain.TxtRecord != "" {
+		if !s.verifyTXTRecord(domain.Name, domain.TxtRecord) {
 			verified = false
 		}
 	}
 
 	// 更新验证状态
-	_, err = s.db.Exec("UPDATE domains SET is_verified = ?, updated_at = ? WHERE id = ?",
-		verified, time.Now(), domainID)
-	if err != nil {
+	if err := s.svcCtx.DomainModel.UpdateVerificationStatus(nil, domainID, verified); err != nil {
 		return nil, err
 	}
 
 	domain.IsVerified = verified
 	domain.UpdatedAt = time.Now()
 
-	return &domain, nil
+	return domain, nil
 }
 
 // verifyMXRecord 验证MX记录
@@ -285,46 +243,27 @@ func (s *Service) GetDNSRecords(domain string) map[string][]string {
 }
 
 // GetDomainByID 根据ID获取域名
-func (s *Service) GetDomainByID(domainID int) (*models.Domain, error) {
-	var domain models.Domain
-	query := `
-		SELECT id, name, is_verified, is_active, mx_record, a_record, txt_record, created_at, updated_at
-		FROM domains
-		WHERE id = ?
-	`
-
-	err := s.db.QueryRow(query, domainID).Scan(
-		&domain.ID, &domain.Name, &domain.IsVerified, &domain.IsActive,
-		&domain.MXRecord, &domain.ARecord, &domain.TXTRecord,
-		&domain.CreatedAt, &domain.UpdatedAt,
-	)
-
+func (s *Service) GetDomainByID(domainID int64) (*model.Domain, error) {
+	domain, err := s.svcCtx.DomainModel.GetById(domainID)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, fmt.Errorf("域名不存在")
 		}
 		return nil, err
 	}
 
-	return &domain, nil
+	return domain, nil
 }
 
 // UpdateDomain 更新域名信息
-func (s *Service) UpdateDomain(domainID int, mxRecord, aRecord, txtRecord string) error {
-	_, err := s.db.Exec(`
-		UPDATE domains
-		SET mx_record = ?, a_record = ?, txt_record = ?, updated_at = ?
-		WHERE id = ?
-	`, mxRecord, aRecord, txtRecord, time.Now(), domainID)
-
-	return err
+func (s *Service) UpdateDomain(domainID int64, mxRecord, aRecord, txtRecord string) error {
+	return s.svcCtx.DomainModel.UpdateDNSRecords(nil, domainID, mxRecord, aRecord, txtRecord)
 }
 
 // DeleteDomain 删除域名
-func (s *Service) DeleteDomain(domainID int) error {
+func (s *Service) DeleteDomain(domainID int64) error {
 	// 检查是否有邮箱使用此域名
-	var count int
-	err := s.db.QueryRow("SELECT COUNT(*) FROM mailboxes WHERE domain_id = ? AND is_active = 1", domainID).Scan(&count)
+	count, err := s.svcCtx.MailboxModel.CountMailboxesByDomainId(domainID)
 	if err != nil {
 		return err
 	}
@@ -332,37 +271,20 @@ func (s *Service) DeleteDomain(domainID int) error {
 		return fmt.Errorf("该域名下还有邮箱，无法删除")
 	}
 
-	// 真正删除域名记录
-	_, err = s.db.Exec("DELETE FROM domains WHERE id = ?", domainID)
-	return err
+	// 获取域名对象用于删除
+	domain, err := s.svcCtx.DomainModel.GetById(domainID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("域名不存在")
+		}
+		return err
+	}
+
+	// 删除域名记录
+	return s.svcCtx.DomainModel.Delete(nil, domain)
 }
 
 // GetAvailableDomains 获取可用的域名列表（已验证且激活的）
-func (s *Service) GetAvailableDomains() ([]models.Domain, error) {
-	query := `
-		SELECT id, name, is_verified, is_active, mx_record, a_record, txt_record, created_at, updated_at
-		FROM domains
-		WHERE is_active = 1 AND is_verified = 1
-		ORDER BY created_at DESC
-	`
-
-	rows, err := s.db.Query(query)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var domains []models.Domain
-	for rows.Next() {
-		var domain models.Domain
-		err = rows.Scan(&domain.ID, &domain.Name, &domain.IsVerified, &domain.IsActive,
-			&domain.MXRecord, &domain.ARecord, &domain.TXTRecord,
-			&domain.CreatedAt, &domain.UpdatedAt)
-		if err != nil {
-			return nil, err
-		}
-		domains = append(domains, domain)
-	}
-
-	return domains, nil
+func (s *Service) GetAvailableDomains() ([]*model.Domain, error) {
+	return s.svcCtx.DomainModel.GetAvailableDomains()
 }
