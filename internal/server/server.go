@@ -44,7 +44,7 @@ func New(db *sql.DB, cfg *config.Config, svcCtx *svc.ServiceContext) *Server {
 	emailService := email.NewService(db)
 
 	// 创建转发服务
-	forwardService := forward.NewService(db)
+	forwardService := forward.NewService(svcCtx)
 
 	server := &Server{
 		router:         gin.Default(),

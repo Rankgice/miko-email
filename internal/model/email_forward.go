@@ -304,3 +304,93 @@ func (m *EmailForwardModel) GetForwardStatistics(mailboxId int64) (map[string]in
 		"total_forwards": result.TotalForwards,
 	}, nil
 }
+
+// GetForwardsByUserId 根据用户ID获取转发规则（通过JOIN mailbox表）
+func (m *EmailForwardModel) GetForwardsByUserId(userId int64) ([]*EmailForward, error) {
+	var emailForwards []*EmailForward
+	err := m.db.Table("email_forward ef").
+		Select("ef.*").
+		Joins("JOIN mailbox m ON ef.mailbox_id = m.id").
+		Where("m.user_id = ?", userId).
+		Order("ef.created_at DESC").
+		Find(&emailForwards).Error
+	return emailForwards, err
+}
+
+// GetForwardByIdAndUserId 根据ID和用户ID获取转发规则（通过JOIN mailbox表）
+func (m *EmailForwardModel) GetForwardByIdAndUserId(id, userId int64) (*EmailForward, error) {
+	var emailForward EmailForward
+	err := m.db.Table("email_forward ef").
+		Select("ef.*").
+		Joins("JOIN mailbox m ON ef.mailbox_id = m.id").
+		Where("ef.id = ? AND m.user_id = ?", id, userId).
+		First(&emailForward).Error
+	if err != nil {
+		return nil, err
+	}
+	return &emailForward, nil
+}
+
+// GetUserForwardStatistics 获取用户的转发统计信息（通过JOIN mailbox表）
+func (m *EmailForwardModel) GetUserForwardStatistics(userId int64) (map[string]interface{}, error) {
+	var result struct {
+		TotalRules    int64 `json:"total_rules"`
+		ActiveRules   int64 `json:"active_rules"`
+		TotalForwards int64 `json:"total_forwards"`
+		TodayForwards int64 `json:"today_forwards"`
+	}
+
+	// 获取总规则数
+	if err := m.db.Table("email_forward ef").
+		Joins("JOIN mailbox m ON ef.mailbox_id = m.id").
+		Where("m.user_id = ?", userId).
+		Count(&result.TotalRules).Error; err != nil {
+		return nil, err
+	}
+
+	// 获取启用规则数
+	if err := m.db.Table("email_forward ef").
+		Joins("JOIN mailbox m ON ef.mailbox_id = m.id").
+		Where("m.user_id = ? AND ef.enabled = ?", userId, true).
+		Count(&result.ActiveRules).Error; err != nil {
+		return nil, err
+	}
+
+	// 获取总转发次数
+	if err := m.db.Table("email_forward ef").
+		Joins("JOIN mailbox m ON ef.mailbox_id = m.id").
+		Where("m.user_id = ?", userId).
+		Select("COALESCE(SUM(ef.forward_count), 0)").
+		Scan(&result.TotalForwards).Error; err != nil {
+		return nil, err
+	}
+
+	// 获取今日转发次数（基于last_forward_at字段统计）
+	if err := m.db.Table("email_forward ef").
+		Joins("JOIN mailbox m ON ef.mailbox_id = m.id").
+		Where("m.user_id = ? AND ef.last_forward_at >= datetime('now', 'start of day')", userId).
+		Count(&result.TodayForwards).Error; err != nil {
+		return nil, err
+	}
+
+	return map[string]interface{}{
+		"total_rules":    result.TotalRules,
+		"active_rules":   result.ActiveRules,
+		"total_forwards": result.TotalForwards,
+		"today_forwards": result.TodayForwards,
+	}, nil
+}
+
+// CheckForwardRuleExistByTarget 检查邮箱和目标邮箱的转发规则是否存在
+func (m *EmailForwardModel) CheckForwardRuleExistByTarget(mailboxId int64, targetEmail string) (bool, error) {
+	var count int64
+	err := m.db.Model(&EmailForward{}).
+		Where("mailbox_id = ? AND target_email = ?", mailboxId, targetEmail).
+		Count(&count).Error
+
+	if err != nil {
+		return false, err
+	}
+
+	return count > 0, nil
+}

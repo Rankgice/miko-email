@@ -434,7 +434,7 @@ func (h *EmailHandler) GetForwardRules(c *gin.Context) {
 	c.Header("Content-Type", "application/json; charset=utf-8")
 
 	username := c.GetString("username")
-	userID := c.GetInt("user_id")
+	userID := c.GetInt64("user_id")
 
 	rules, err := h.forwardService.GetForwardRulesByUser(userID)
 	if err != nil {
@@ -466,7 +466,7 @@ func (h *EmailHandler) CreateForwardRule(c *gin.Context) {
 	}
 
 	username := c.GetString("username")
-	userID := c.GetInt("user_id")
+	userID := c.GetInt64("user_id")
 
 	newRule, err := h.forwardService.CreateForwardRule(userID, req)
 	if err != nil {
@@ -489,7 +489,7 @@ func (h *EmailHandler) GetForwardRule(c *gin.Context) {
 	c.Header("Content-Type", "application/json; charset=utf-8")
 
 	idStr := c.Param("id")
-	id, err := strconv.Atoi(idStr)
+	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
@@ -498,7 +498,7 @@ func (h *EmailHandler) GetForwardRule(c *gin.Context) {
 		return
 	}
 
-	userID := c.GetInt("user_id")
+	userID := c.GetInt64("user_id")
 
 	rule, err := h.forwardService.GetForwardRuleByID(id, userID)
 	if err != nil {
@@ -520,7 +520,7 @@ func (h *EmailHandler) UpdateForwardRule(c *gin.Context) {
 	c.Header("Content-Type", "application/json; charset=utf-8")
 
 	idStr := c.Param("id")
-	id, err := strconv.Atoi(idStr)
+	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
@@ -538,7 +538,7 @@ func (h *EmailHandler) UpdateForwardRule(c *gin.Context) {
 		return
 	}
 
-	userID := c.GetInt("user_id")
+	userID := c.GetInt64("user_id")
 
 	err = h.forwardService.UpdateForwardRule(id, userID, req)
 	if err != nil {
@@ -560,7 +560,7 @@ func (h *EmailHandler) DeleteForwardRule(c *gin.Context) {
 	c.Header("Content-Type", "application/json; charset=utf-8")
 
 	idStr := c.Param("id")
-	id, err := strconv.Atoi(idStr)
+	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
@@ -569,7 +569,7 @@ func (h *EmailHandler) DeleteForwardRule(c *gin.Context) {
 		return
 	}
 
-	userID := c.GetInt("user_id")
+	userID := c.GetInt64("user_id")
 
 	err = h.forwardService.DeleteForwardRule(id, userID)
 	if err != nil {
@@ -591,7 +591,7 @@ func (h *EmailHandler) ToggleForwardRule(c *gin.Context) {
 	c.Header("Content-Type", "application/json; charset=utf-8")
 
 	idStr := c.Param("id")
-	id, err := strconv.Atoi(idStr)
+	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
@@ -611,7 +611,7 @@ func (h *EmailHandler) ToggleForwardRule(c *gin.Context) {
 		return
 	}
 
-	userID := c.GetInt("user_id")
+	userID := c.GetInt64("user_id")
 
 	err = h.forwardService.ToggleForwardRule(id, userID, req.Enabled)
 	if err != nil {
@@ -723,7 +723,7 @@ func (h *EmailHandler) TestForwardRule(c *gin.Context) {
 func (h *EmailHandler) GetForwardStatistics(c *gin.Context) {
 	c.Header("Content-Type", "application/json; charset=utf-8")
 
-	userID := c.GetInt("user_id")
+	userID := c.GetInt64("user_id")
 
 	stats, err := h.forwardService.GetForwardStatistics(userID)
 	if err != nil {

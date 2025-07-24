@@ -276,3 +276,12 @@ func (m *MailboxModel) CountMailboxesByDomainId(domainId int64) (int64, error) {
 	err := m.db.Model(&Mailbox{}).Where("domain_id = ? AND is_active = ?", domainId, true).Count(&count).Error
 	return count, err
 }
+
+// GetByEmailAndUserId 根据邮箱地址和用户ID获取邮箱
+func (m *MailboxModel) GetByEmailAndUserId(email string, userId int64) (*Mailbox, error) {
+	var mailbox Mailbox
+	if err := m.db.Where("email = ? AND user_id = ?", email, userId).First(&mailbox).Error; err != nil {
+		return nil, err
+	}
+	return &mailbox, nil
+}
