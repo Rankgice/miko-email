@@ -21,7 +21,7 @@ type ServiceContext struct {
 }
 
 func NewServiceContext(c config.Config) *ServiceContext {
-	db, err := gorm.Open(sqlite.Open("data.db"), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open("miko_email.db"), &gorm.Config{})
 	if err != nil {
 		log.Fatal("连接数据库失败", err)
 	}

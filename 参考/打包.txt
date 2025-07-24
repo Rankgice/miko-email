@@ -1,7 +1,0 @@
-E:\邮友管理系统\nbemail>set GOOS=linux
-
-E:\邮友管理系统\nbemail>set GOARCH=amd64
-
-E:\邮友管理系统\nbemail>go build -o email-linux-amd64 .
-
-E:\邮友管理系统\nbemail>go build -o NBemail-linux-amd64 .
