@@ -1,2 +1,0 @@
-用户名,邮箱,密码
-kimi,kimi@jbjj.site,06c3c4d1
