@@ -3,7 +3,6 @@ package main
 import (
 	"log"
 	"miko-email/internal/config"
-	"miko-email/internal/database"
 	"miko-email/internal/server"
 	"miko-email/internal/services/email"
 	"miko-email/internal/svc"
@@ -16,15 +15,14 @@ func main() {
 	//初始化上下文
 	svcCtx := svc.NewServiceContext(*cfg)
 
-	// 初始化数据库
-	db, err := database.Init(cfg.DatabasePath)
+	// 从GORM获取原生SQL数据库连接
+	sqlDB, err := svcCtx.DB.DB()
 	if err != nil {
-		log.Fatal("Failed to initialize database:", err)
+		log.Fatal("Failed to get SQL DB from GORM:", err)
 	}
-	defer db.Close()
 
 	// 创建邮件服务
-	emailService := email.NewService(db)
+	emailService := email.NewService(sqlDB)
 
 	// 启动邮件服务器（SMTP, IMAP, POP3）
 	// 启动多个SMTP端口
@@ -55,7 +53,7 @@ func main() {
 	}()
 
 	// 启动Web服务器
-	webServer := server.New(db, cfg, svcCtx)
+	webServer := server.New(sqlDB, cfg, svcCtx)
 	log.Printf("Starting web server on port %s", cfg.WebPort)
 	if err := webServer.Start(); err != nil {
 		log.Fatal("Failed to start web server:", err)
