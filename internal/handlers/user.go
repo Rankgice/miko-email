@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"miko-email/internal/svc"
 	"net/http"
 	"strconv"
 	"time"
@@ -73,12 +74,14 @@ func convertUserWithStatsToResponse(userStats user.UserWithStats) *UserResponse 
 type UserHandler struct {
 	userService  *user.Service
 	sessionStore *sessions.CookieStore
+	svcCtx       *svc.ServiceContext
 }
 
-func NewUserHandler(userService *user.Service, sessionStore *sessions.CookieStore) *UserHandler {
+func NewUserHandler(userService *user.Service, sessionStore *sessions.CookieStore, svcCtx *svc.ServiceContext) *UserHandler {
 	return &UserHandler{
 		userService:  userService,
 		sessionStore: sessionStore,
+		svcCtx:       svcCtx,
 	}
 }
 

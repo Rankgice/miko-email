@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"miko-email/internal/svc"
 	"net/http"
 	"strconv"
 	"strings"
@@ -14,12 +15,14 @@ import (
 type MailboxHandler struct {
 	mailboxService *mailbox.Service
 	sessionStore   *sessions.CookieStore
+	svcCtx         *svc.ServiceContext
 }
 
-func NewMailboxHandler(mailboxService *mailbox.Service, sessionStore *sessions.CookieStore) *MailboxHandler {
+func NewMailboxHandler(mailboxService *mailbox.Service, sessionStore *sessions.CookieStore, svcCtx *svc.ServiceContext) *MailboxHandler {
 	return &MailboxHandler{
 		mailboxService: mailboxService,
 		sessionStore:   sessionStore,
+		svcCtx:         svcCtx,
 	}
 }
 

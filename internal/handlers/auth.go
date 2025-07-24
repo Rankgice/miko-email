@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"database/sql"
+	"miko-email/internal/svc"
 	"net/http"
 
 	"miko-email/internal/models"
@@ -15,13 +16,15 @@ type AuthHandler struct {
 	authService  *auth.Service
 	sessionStore *sessions.CookieStore
 	db           *sql.DB
+	svcCtx       *svc.ServiceContext
 }
 
-func NewAuthHandler(authService *auth.Service, sessionStore *sessions.CookieStore, db *sql.DB) *AuthHandler {
+func NewAuthHandler(authService *auth.Service, sessionStore *sessions.CookieStore, db *sql.DB, svcCtx *svc.ServiceContext) *AuthHandler {
 	return &AuthHandler{
 		authService:  authService,
 		sessionStore: sessionStore,
 		db:           db,
+		svcCtx:       svcCtx,
 	}
 }
 

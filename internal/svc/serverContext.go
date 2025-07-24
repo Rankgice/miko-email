@@ -9,16 +9,9 @@ import (
 	"gorm.io/gorm"
 )
 
-var SvcCtx *ServiceContext
-
-func init() {
-	SvcCtx = NewServiceContext(config.Config{})
-}
-
 type ServiceContext struct {
 	Config            config.Config
 	DB                *gorm.DB
-	ProxyModel        *model.ProxyModel
 	UserModel         *model.UserModel
 	AdminModel        *model.AdminModel
 	DomainModel       *model.DomainModel
@@ -50,7 +43,6 @@ func NewServiceContext(c config.Config) *ServiceContext {
 	return &ServiceContext{
 		Config:            c,
 		DB:                db,
-		ProxyModel:        model.NewProxyModel(db),
 		UserModel:         model.NewUserModel(db),
 		AdminModel:        model.NewAdminModel(db),
 		DomainModel:       model.NewDomainModel(db),
@@ -64,7 +56,6 @@ func NewServiceContext(c config.Config) *ServiceContext {
 func autoMigrate(db *gorm.DB) error {
 	// 自动迁移所有模型
 	return db.AutoMigrate(
-		&model.Proxy{},
 		&model.User{},
 		&model.Admin{},
 		&model.Domain{},

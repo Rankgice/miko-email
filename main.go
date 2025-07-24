@@ -6,11 +6,15 @@ import (
 	"miko-email/internal/database"
 	"miko-email/internal/server"
 	"miko-email/internal/services/email"
+	"miko-email/internal/svc"
 )
 
 func main() {
 	// 加载配置
 	cfg := config.Load()
+
+	//初始化上下文
+	svcCtx := svc.NewServiceContext(*cfg)
 
 	// 初始化数据库
 	db, err := database.Init(cfg.DatabasePath)
@@ -51,7 +55,7 @@ func main() {
 	}()
 
 	// 启动Web服务器
-	webServer := server.New(db, cfg)
+	webServer := server.New(db, cfg, svcCtx)
 	log.Printf("Starting web server on port %s", cfg.WebPort)
 	if err := webServer.Start(); err != nil {
 		log.Fatal("Failed to start web server:", err)

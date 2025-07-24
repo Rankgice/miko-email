@@ -2,6 +2,7 @@ package server
 
 import (
 	"database/sql"
+	"miko-email/internal/svc"
 	"net/http"
 	"strings"
 
@@ -28,7 +29,7 @@ type Server struct {
 	forwardService *forward.Service
 }
 
-func New(db *sql.DB, cfg *config.Config) *Server {
+func New(db *sql.DB, cfg *config.Config, svcCtx *svc.ServiceContext) *Server {
 	// 创建session store
 	sessionStore := sessions.NewCookieStore([]byte(cfg.SessionKey))
 	sessionStore.Options = &sessions.Options{
@@ -54,11 +55,11 @@ func New(db *sql.DB, cfg *config.Config) *Server {
 		forwardService: forwardService,
 	}
 
-	server.setupRoutes()
+	server.setupRoutes(svcCtx)
 	return server
 }
 
-func (s *Server) setupRoutes() {
+func (s *Server) setupRoutes(svcCtx *svc.ServiceContext) {
 	// 设置UTF-8编码中间件
 	s.router.Use(func(c *gin.Context) {
 		// 对于API请求，设置JSON编码
@@ -78,12 +79,12 @@ func (s *Server) setupRoutes() {
 	userService := user.NewService(s.db)
 
 	// 创建处理器实例
-	authHandler := handlers.NewAuthHandler(authService, s.sessionStore, s.db)
-	mailboxHandler := handlers.NewMailboxHandler(mailboxService, s.sessionStore)
-	domainHandler := handlers.NewDomainHandler(domainService, s.sessionStore)
-	userHandler := handlers.NewUserHandler(userService, s.sessionStore)
-	emailHandler := handlers.NewEmailHandler(s.emailService, mailboxService, s.forwardService, s.sessionStore)
-	webHandler := handlers.NewWebHandler(s.sessionStore)
+	authHandler := handlers.NewAuthHandler(authService, s.sessionStore, s.db, svcCtx)
+	mailboxHandler := handlers.NewMailboxHandler(mailboxService, s.sessionStore, svcCtx)
+	domainHandler := handlers.NewDomainHandler(domainService, s.sessionStore, svcCtx)
+	userHandler := handlers.NewUserHandler(userService, s.sessionStore, svcCtx)
+	emailHandler := handlers.NewEmailHandler(s.emailService, mailboxService, s.forwardService, s.sessionStore, svcCtx)
+	webHandler := handlers.NewWebHandler(s.sessionStore, svcCtx)
 
 	// 中间件
 	authMiddleware := middleware.NewAuthMiddleware(s.sessionStore)

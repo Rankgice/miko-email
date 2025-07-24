@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"miko-email/internal/svc"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -9,10 +10,14 @@ import (
 
 type WebHandler struct {
 	sessionStore *sessions.CookieStore
+	svcCtx       *svc.ServiceContext
 }
 
-func NewWebHandler(sessionStore *sessions.CookieStore) *WebHandler {
-	return &WebHandler{sessionStore: sessionStore}
+func NewWebHandler(sessionStore *sessions.CookieStore, svcCtx *svc.ServiceContext) *WebHandler {
+	return &WebHandler{
+		sessionStore: sessionStore,
+		svcCtx:       svcCtx,
+	}
 }
 
 // Home 首页

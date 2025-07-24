@@ -3,6 +3,7 @@ package handlers
 import (
 	"fmt"
 	"log"
+	"miko-email/internal/svc"
 	"net"
 	"net/http"
 	"net/smtp"
@@ -28,15 +29,17 @@ type EmailHandler struct {
 	forwardService *forward.Service
 	sessionStore   *sessions.CookieStore
 	smtpClient     *smtpService.OutboundClient
+	svcCtx         *svc.ServiceContext
 }
 
-func NewEmailHandler(emailService *email.Service, mailboxService *mailbox.Service, forwardService *forward.Service, sessionStore *sessions.CookieStore) *EmailHandler {
+func NewEmailHandler(emailService *email.Service, mailboxService *mailbox.Service, forwardService *forward.Service, sessionStore *sessions.CookieStore, svcCtx *svc.ServiceContext) *EmailHandler {
 	return &EmailHandler{
 		emailService:   emailService,
 		mailboxService: mailboxService,
 		forwardService: forwardService,
 		sessionStore:   sessionStore,
 		smtpClient:     smtpService.NewOutboundClientWithDB(mailboxService.GetDB()), // 使用数据库动态获取域名
+		svcCtx:         svcCtx,
 	}
 }
 

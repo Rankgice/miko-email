@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"miko-email/internal/svc"
 	"net/http"
 	"strconv"
 
@@ -13,12 +14,14 @@ import (
 type DomainHandler struct {
 	domainService *domain.Service
 	sessionStore  *sessions.CookieStore
+	svcCtx        *svc.ServiceContext
 }
 
-func NewDomainHandler(domainService *domain.Service, sessionStore *sessions.CookieStore) *DomainHandler {
+func NewDomainHandler(domainService *domain.Service, sessionStore *sessions.CookieStore, svcCtx *svc.ServiceContext) *DomainHandler {
 	return &DomainHandler{
 		domainService: domainService,
 		sessionStore:  sessionStore,
+		svcCtx:        svcCtx,
 	}
 }
 
