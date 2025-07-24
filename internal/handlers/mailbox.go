@@ -28,18 +28,18 @@ func NewMailboxHandler(mailboxService *mailbox.Service, sessionStore *sessions.C
 
 type CreateMailboxRequest struct {
 	Prefix   string `json:"prefix" binding:"required"`
-	DomainID int    `json:"domain_id" binding:"required"`
+	DomainID int64  `json:"domain_id" binding:"required"`
 	Password string `json:"password" binding:"required"`
 }
 
 type BatchCreateMailboxRequest struct {
 	Prefixes []string `json:"prefixes" binding:"required"`
-	DomainID int      `json:"domain_id" binding:"required"`
+	DomainID int64    `json:"domain_id" binding:"required"`
 }
 
 // GetMailboxes 获取邮箱列表
 func (h *MailboxHandler) GetMailboxes(c *gin.Context) {
-	userID := c.GetInt("user_id")
+	userID := int64(c.GetInt("user_id"))
 	isAdmin := c.GetBool("is_admin")
 
 	mailboxes, err := h.mailboxService.GetUserMailboxes(userID, isAdmin)
@@ -62,7 +62,7 @@ func (h *MailboxHandler) CreateMailbox(c *gin.Context) {
 		return
 	}
 
-	userID := c.GetInt("user_id")
+	userID := int64(c.GetInt("user_id"))
 	isAdmin := c.GetBool("is_admin")
 
 	// 验证前缀格式
@@ -97,7 +97,7 @@ func (h *MailboxHandler) BatchCreateMailboxes(c *gin.Context) {
 		return
 	}
 
-	userID := c.GetInt("user_id")
+	userID := int64(c.GetInt("user_id"))
 	isAdmin := c.GetBool("is_admin")
 
 	// 验证所有前缀格式
@@ -124,13 +124,13 @@ func (h *MailboxHandler) BatchCreateMailboxes(c *gin.Context) {
 // GetMailboxPassword 获取邮箱密码
 func (h *MailboxHandler) GetMailboxPassword(c *gin.Context) {
 	mailboxIDStr := c.Param("id")
-	mailboxID, err := strconv.Atoi(mailboxIDStr)
+	mailboxID, err := strconv.ParseInt(mailboxIDStr, 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "邮箱ID格式错误"})
 		return
 	}
 
-	userID := c.GetInt("user_id")
+	userID := int64(c.GetInt("user_id"))
 	isAdmin := c.GetBool("is_admin")
 
 	password, err := h.mailboxService.GetMailboxPassword(mailboxID, userID, isAdmin)
@@ -150,13 +150,13 @@ func (h *MailboxHandler) GetMailboxPassword(c *gin.Context) {
 // DeleteMailbox 删除邮箱
 func (h *MailboxHandler) DeleteMailbox(c *gin.Context) {
 	mailboxIDStr := c.Param("id")
-	mailboxID, err := strconv.Atoi(mailboxIDStr)
+	mailboxID, err := strconv.ParseInt(mailboxIDStr, 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "邮箱ID格式错误"})
 		return
 	}
 
-	userID := c.GetInt("user_id")
+	userID := int64(c.GetInt("user_id"))
 	isAdmin := c.GetBool("is_admin")
 
 	err = h.mailboxService.DeleteMailbox(mailboxID, userID, isAdmin)
@@ -213,7 +213,7 @@ func (h *MailboxHandler) GetAllMailboxes(c *gin.Context) {
 // UpdateMailboxStatus 更新邮箱状态（管理员）
 func (h *MailboxHandler) UpdateMailboxStatus(c *gin.Context) {
 	mailboxIDStr := c.Param("id")
-	mailboxID, err := strconv.Atoi(mailboxIDStr)
+	mailboxID, err := strconv.ParseInt(mailboxIDStr, 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "邮箱ID格式错误"})
 		return
@@ -244,7 +244,7 @@ func (h *MailboxHandler) UpdateMailboxStatus(c *gin.Context) {
 // DeleteMailboxAdmin 删除邮箱（管理员）
 func (h *MailboxHandler) DeleteMailboxAdmin(c *gin.Context) {
 	mailboxIDStr := c.Param("id")
-	mailboxID, err := strconv.Atoi(mailboxIDStr)
+	mailboxID, err := strconv.ParseInt(mailboxIDStr, 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "邮箱ID格式错误"})
 		return
@@ -262,7 +262,7 @@ func (h *MailboxHandler) DeleteMailboxAdmin(c *gin.Context) {
 // GetMailboxStats 获取邮箱统计信息（管理员）
 func (h *MailboxHandler) GetMailboxStats(c *gin.Context) {
 	mailboxIDStr := c.Param("id")
-	mailboxID, err := strconv.Atoi(mailboxIDStr)
+	mailboxID, err := strconv.ParseInt(mailboxIDStr, 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "邮箱ID格式错误"})
 		return
@@ -282,7 +282,7 @@ func (h *MailboxHandler) GetMailboxStats(c *gin.Context) {
 
 // GetUserStats 获取用户统计信息
 func (h *MailboxHandler) GetUserStats(c *gin.Context) {
-	userID := c.GetInt("user_id")
+	userID := int64(c.GetInt("user_id"))
 
 	stats, err := h.mailboxService.GetUserStats(userID)
 	if err != nil {

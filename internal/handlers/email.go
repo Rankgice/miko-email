@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"miko-email/internal/config"
+	"miko-email/internal/model"
 	"miko-email/internal/models"
 	"miko-email/internal/services/email"
 	"miko-email/internal/services/forward"
@@ -36,12 +37,18 @@ type EmailHandler struct {
 }
 
 func NewEmailHandler(emailService *email.Service, mailboxService *mailbox.Service, forwardService *forward.Service, sessionStore *sessions.CookieStore, svcCtx *svc.ServiceContext) *EmailHandler {
+	// 从GORM获取原生SQL数据库连接
+	sqlDB, err := svcCtx.DB.DB()
+	if err != nil {
+		panic("Failed to get SQL DB from GORM: " + err.Error())
+	}
+
 	return &EmailHandler{
 		emailService:   emailService,
 		mailboxService: mailboxService,
 		forwardService: forwardService,
 		sessionStore:   sessionStore,
-		smtpClient:     smtpService.NewOutboundClientWithDB(mailboxService.GetDB()), // 使用数据库动态获取域名
+		smtpClient:     smtpService.NewOutboundClientWithDB(sqlDB), // 使用数据库动态获取域名
 		svcCtx:         svcCtx,
 	}
 }
@@ -124,7 +131,7 @@ func (h *EmailHandler) SendEmail(c *gin.Context) {
 	}
 
 	// 获取当前用户信息
-	userID := c.GetInt("user_id")
+	userID := int64(c.GetInt("user_id"))
 	isAdmin := c.GetBool("is_admin")
 	if userID == 0 {
 		c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "未登录"})
@@ -140,12 +147,12 @@ func (h *EmailHandler) SendEmail(c *gin.Context) {
 
 	// 检查邮箱所有权
 	if isAdmin {
-		if fromMailbox.AdminID == nil || *fromMailbox.AdminID != userID {
+		if fromMailbox.AdminId == nil || *fromMailbox.AdminId != userID {
 			c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "无权使用此邮箱发送邮件"})
 			return
 		}
 	} else {
-		if fromMailbox.UserID == nil || *fromMailbox.UserID != userID {
+		if fromMailbox.UserId == nil || *fromMailbox.UserId != userID {
 			c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "无权使用此邮箱发送邮件"})
 			return
 		}
@@ -202,7 +209,7 @@ func (h *EmailHandler) SendEmail(c *gin.Context) {
 
 	// 只有在有成功发送的邮件时，才保存到发件人的已发送文件夹
 	for _, recipient := range successfulSends {
-		err := h.emailService.SaveEmailToSent(fromMailbox.ID, req.From, recipient, req.Subject, req.Content)
+		err := h.emailService.SaveEmailToSent(int(fromMailbox.Id), req.From, recipient, req.Subject, req.Content)
 		if err != nil {
 			// 保存到已发送失败，记录日志但不影响主要功能
 			continue
@@ -228,7 +235,7 @@ func (h *EmailHandler) GetEmails(c *gin.Context) {
 	c.Header("Content-Type", "application/json; charset=utf-8")
 
 	// 获取当前用户信息
-	userID := c.GetInt("user_id")
+	userID := int64(c.GetInt("user_id"))
 	isAdmin := c.GetBool("is_admin")
 	if userID == 0 {
 		c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "未登录"})
@@ -251,7 +258,7 @@ func (h *EmailHandler) GetEmails(c *gin.Context) {
 	}
 
 	// 如果没有指定邮箱，获取用户的第一个邮箱
-	var targetMailbox *models.Mailbox
+	var targetMailbox *model.Mailbox
 	var err error
 
 	if mailboxEmail != "" {
@@ -267,24 +274,24 @@ func (h *EmailHandler) GetEmails(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{"success": true, "data": []interface{}{}, "total": 0})
 			return
 		}
-		targetMailbox = &mailboxes[0]
+		targetMailbox = mailboxes[0]
 	}
 
 	// 检查邮箱所有权
 	if isAdmin {
-		if targetMailbox.AdminID == nil || *targetMailbox.AdminID != userID {
+		if targetMailbox.AdminId == nil || *targetMailbox.AdminId != userID {
 			c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "无权访问此邮箱"})
 			return
 		}
 	} else {
-		if targetMailbox.UserID == nil || *targetMailbox.UserID != userID {
+		if targetMailbox.UserId == nil || *targetMailbox.UserId != userID {
 			c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "无权访问此邮箱"})
 			return
 		}
 	}
 
 	// 获取邮件列表
-	emails, total, err := h.emailService.GetEmails(targetMailbox.ID, emailType, page, limit)
+	emails, total, err := h.emailService.GetEmails(int(targetMailbox.Id), emailType, page, limit)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "获取邮件失败"})
 		return
@@ -305,7 +312,7 @@ func (h *EmailHandler) GetEmailByID(c *gin.Context) {
 	c.Header("Content-Type", "application/json; charset=utf-8")
 
 	// 获取当前用户信息
-	userID := c.GetInt("user_id")
+	userID := int64(c.GetInt("user_id"))
 	isAdmin := c.GetBool("is_admin")
 	if userID == 0 {
 		c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "未登录"})
@@ -334,26 +341,26 @@ func (h *EmailHandler) GetEmailByID(c *gin.Context) {
 
 	// 检查邮箱所有权
 	if isAdmin {
-		if targetMailbox.AdminID == nil || *targetMailbox.AdminID != userID {
+		if targetMailbox.AdminId == nil || *targetMailbox.AdminId != userID {
 			c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "无权访问此邮箱"})
 			return
 		}
 	} else {
-		if targetMailbox.UserID == nil || *targetMailbox.UserID != userID {
+		if targetMailbox.UserId == nil || *targetMailbox.UserId != userID {
 			c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "无权访问此邮箱"})
 			return
 		}
 	}
 
 	// 获取邮件详情
-	email, err := h.emailService.GetEmailByID(emailID, targetMailbox.ID)
+	email, err := h.emailService.GetEmailByID(emailID, int(targetMailbox.Id))
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "邮件不存在"})
 		return
 	}
 
 	// 标记为已读
-	h.emailService.MarkAsRead(emailID, targetMailbox.ID)
+	h.emailService.MarkAsRead(emailID, int(targetMailbox.Id))
 
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": email})
 }
@@ -369,7 +376,7 @@ func (h *EmailHandler) DeleteEmail(c *gin.Context) {
 		return
 	}
 
-	userID := c.GetInt("user_id")
+	userID := int64(c.GetInt("user_id"))
 	isAdmin := c.GetBool("is_admin")
 
 	// 首先需要获取用户的邮箱来验证权限
@@ -389,7 +396,7 @@ func (h *EmailHandler) DeleteEmail(c *gin.Context) {
 	}
 
 	// 使用第一个邮箱的ID来获取邮件（这里需要改进逻辑）
-	mailboxID := userMailboxes[0].ID
+	mailboxID := int(userMailboxes[0].Id)
 
 	// 验证邮件是否存在且属于用户的邮箱
 	_, err = h.emailService.GetEmailByID(emailID, mailboxID)
@@ -397,9 +404,9 @@ func (h *EmailHandler) DeleteEmail(c *gin.Context) {
 		// 尝试其他邮箱
 		found := false
 		for _, mb := range userMailboxes {
-			_, err = h.emailService.GetEmailByID(emailID, mb.ID)
+			_, err = h.emailService.GetEmailByID(emailID, int(mb.Id))
 			if err == nil {
-				mailboxID = mb.ID
+				mailboxID = int(mb.Id)
 				found = true
 				break
 			}
@@ -879,7 +886,7 @@ func (h *EmailHandler) buildEmailMessage(from, to, subject, body string) []byte 
 func (h *EmailHandler) GetVerificationCode(c *gin.Context) {
 	c.Header("Content-Type", "application/json; charset=utf-8")
 
-	userID := c.GetInt("user_id")
+	userID := int64(c.GetInt("user_id"))
 	mailbox := c.Query("mailbox")
 	sender := c.Query("sender")               // 可选：指定发件人过滤
 	subject := c.Query("subject")             // 可选：指定主题关键词过滤
@@ -909,7 +916,7 @@ func (h *EmailHandler) GetVerificationCode(c *gin.Context) {
 		return
 	}
 
-	if mailboxInfo.UserID == nil || *mailboxInfo.UserID != userID {
+	if mailboxInfo.UserId == nil || *mailboxInfo.UserId != userID {
 		c.JSON(http.StatusForbidden, gin.H{
 			"success": false,
 			"message": "无权访问此邮箱",
@@ -931,7 +938,7 @@ func (h *EmailHandler) GetVerificationCode(c *gin.Context) {
 		}
 
 		// 获取特定邮件
-		email, getErr := h.emailService.GetEmailByID(emailID, mailboxInfo.ID)
+		email, getErr := h.emailService.GetEmailByID(emailID, int(mailboxInfo.Id))
 		if getErr != nil {
 			c.JSON(http.StatusNotFound, gin.H{
 				"success": false,
@@ -943,7 +950,7 @@ func (h *EmailHandler) GetVerificationCode(c *gin.Context) {
 	} else {
 		// 获取邮件列表
 		var getErr error
-		emails, _, getErr = h.emailService.GetEmails(mailboxInfo.ID, "inbox", 1, limit)
+		emails, _, getErr = h.emailService.GetEmails(int(mailboxInfo.Id), "inbox", 1, limit)
 		if getErr != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"success": false,

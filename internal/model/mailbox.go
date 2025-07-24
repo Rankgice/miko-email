@@ -141,7 +141,7 @@ func (m *MailboxModel) List(params MailboxReq) ([]*Mailbox, int64, error) {
 		db = db.Offset((params.Page - 1) * params.PageSize).Limit(params.PageSize)
 	}
 
-	if err := db.Find(&mailboxes).Error; err != nil {
+	if err := db.Order("created_at DESC").Find(&mailboxes).Error; err != nil {
 		return nil, 0, err
 	}
 	if params.Page <= 0 || params.PageSize <= 0 {
