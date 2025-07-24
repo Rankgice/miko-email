@@ -201,29 +201,3 @@ func (s *Service) DeleteUser(userID int) error {
 	// 提交事务
 	return tx.Commit()
 }
-
-// SuspendUser 暂停用户（软删除）
-func (s *Service) SuspendUser(userID int) error {
-	// 检查用户是否存在
-	var count int
-	err := s.db.QueryRow("SELECT COUNT(*) FROM users WHERE id = ?", userID).Scan(&count)
-	if err != nil {
-		return err
-	}
-	if count == 0 {
-		return fmt.Errorf("用户不存在")
-	}
-
-	// 暂停用户（设置为非活跃状态）
-	_, err = s.db.Exec("UPDATE users SET is_active = 0, updated_at = ? WHERE id = ?",
-		time.Now(), userID)
-	if err != nil {
-		return err
-	}
-
-	// 同时禁用用户的所有邮箱
-	_, err = s.db.Exec("UPDATE mailboxes SET is_active = 0, updated_at = ? WHERE user_id = ?",
-		time.Now(), userID)
-
-	return err
-}
