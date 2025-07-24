@@ -100,7 +100,7 @@ func (s *Server) setupRoutes() {
 		web.GET("/login", webHandler.LoginPage)
 		web.GET("/register", webHandler.RegisterPage)
 		web.GET("/admin/login", webHandler.AdminLoginPage)
-		
+
 		// 需要登录的页面
 		webAuth := web.Group("/")
 		webAuth.Use(authMiddleware.RequireAuth())
@@ -164,6 +164,9 @@ func (s *Server) setupRoutes() {
 			apiAuth.PATCH("/forward-rules/:id/toggle", emailHandler.ToggleForwardRule)
 			apiAuth.POST("/forward-rules/:id/test", emailHandler.TestForwardRule)
 			apiAuth.GET("/forward-statistics", emailHandler.GetForwardStatistics)
+
+			// 验证码提取
+			apiAuth.GET("/emails/verification-code", emailHandler.GetVerificationCode)
 		}
 
 		// 管理员API

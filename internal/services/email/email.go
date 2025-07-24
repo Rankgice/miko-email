@@ -1257,13 +1257,6 @@ func (session *SMTPSession) handleMail(args string) {
 	if len(parts) > 0 {
 		from := strings.Trim(parts[0], "<>")
 
-		// 检查发件人权限
-		if !session.canSendFrom(from) {
-			log.Printf("发件人权限不足: %s (来自 %s)", from, session.conn.RemoteAddr())
-			session.writeResponse(550, "Authentication required or sender not authorized")
-			return
-		}
-
 		session.from = from
 		log.Printf("设置发件人: %s (来自 %s)", from, session.conn.RemoteAddr())
 	} else {
@@ -1317,6 +1310,13 @@ func (session *SMTPSession) handleRcpt(args string) {
 func (session *SMTPSession) handleData() {
 	if session.from == "" || len(session.to) == 0 {
 		session.writeResponse(503, "Bad sequence of commands")
+		return
+	}
+
+	// 检查发件人权限（现在有收件人信息了）
+	if !session.canSendFrom(session.from) {
+		log.Printf("发件人权限不足: %s (来自 %s)", session.from, session.conn.RemoteAddr())
+		session.writeResponse(550, "Authentication required or sender not authorized")
 		return
 	}
 
@@ -1376,6 +1376,13 @@ func (session *SMTPSession) canSendFrom(from string) bool {
 		return session.isAuthorizedSender(from)
 	}
 
+	// 如果未认证，检查是否是外部邮件投递到本地邮箱
+	// 这是正常的邮件接收流程，应该被允许
+	if session.hasLocalRecipients() {
+		log.Printf("允许外部邮件投递: %s -> 本地邮箱 (来自 %s)", from, session.conn.RemoteAddr())
+		return true
+	}
+
 	// 如果未认证，只允许本地连接发送本域邮件（用于内部系统）
 	clientIP := strings.Split(session.conn.RemoteAddr().String(), ":")[0]
 	isLocalConnection := clientIP == "127.0.0.1" || clientIP == "::1" || clientIP == "localhost"
@@ -1386,6 +1393,16 @@ func (session *SMTPSession) canSendFrom(from string) bool {
 	}
 
 	log.Printf("未认证用户尝试发送邮件: %s (来自 %s)", from, session.conn.RemoteAddr())
+	return false
+}
+
+// hasLocalRecipients 检查是否有本地收件人
+func (session *SMTPSession) hasLocalRecipients() bool {
+	for _, recipient := range session.to {
+		if session.isLocalUser(recipient) {
+			return true
+		}
+	}
 	return false
 }
 
@@ -1609,7 +1626,7 @@ func (session *SMTPSession) parseEmailContent() (subject, body string) {
 	}
 
 	if strings.Contains(contentType, "multipart") && boundary != "" {
-		log.Printf("处理MIME多部分邮件")
+		log.Printf("处理MIME多部分邮件，boundary: %s", boundary)
 		body = parseMIMEMultipart(body, boundary)
 	} else {
 		log.Printf("处理单部分邮件，编码: %s", contentTransferEncoding)
@@ -1989,7 +2006,54 @@ func decodeQuotedPrintableFallback(s string) string {
 	return result.String()
 }
 
-// parseMIMEMultipart 解析MIME多部分邮件
+// isBase64Content 检测内容是否为Base64编码
+func isBase64Content(content string) bool {
+	// 移除空白字符
+	content = strings.ReplaceAll(content, "\n", "")
+	content = strings.ReplaceAll(content, "\r", "")
+	content = strings.ReplaceAll(content, " ", "")
+	content = strings.TrimSpace(content)
+
+	// Base64内容特征：
+	// 1. 只包含A-Z, a-z, 0-9, +, /, =
+	// 2. 长度是4的倍数（padding后）
+	// 3. 只有末尾可能有=号
+
+	if len(content) == 0 || len(content)%4 != 0 {
+		return false
+	}
+
+	// 检查字符是否都是Base64字符
+	for i, char := range content {
+		if !((char >= 'A' && char <= 'Z') ||
+			(char >= 'a' && char <= 'z') ||
+			(char >= '0' && char <= '9') ||
+			char == '+' || char == '/') {
+			// =号只能出现在末尾
+			if char == '=' && i >= len(content)-2 {
+				continue
+			}
+			return false
+		}
+	}
+
+	return true
+}
+
+// processHeader 处理单个邮件头部
+func processHeader(header string, contentType, charset, nestedBoundary, contentTransferEncoding *string) {
+	if strings.HasPrefix(strings.ToLower(header), "content-type:") {
+		*contentType = strings.TrimSpace(header[13:]) // 保持原始大小写用于提取charset
+		*charset = extractCharsetFromContentType(*contentType)
+		// 提取嵌套的boundary
+		*nestedBoundary = extractBoundaryFromContentType(*contentType)
+		*contentType = strings.ToLower(*contentType) // 转为小写用于比较
+	} else if strings.HasPrefix(strings.ToLower(header), "content-transfer-encoding:") {
+		*contentTransferEncoding = strings.TrimSpace(strings.ToLower(header[26:]))
+	}
+}
+
+// parseMIMEMultipart 解析MIME多部分邮件（支持递归解析嵌套结构）
 func parseMIMEMultipart(body, boundary string) string {
 	parts := strings.Split(body, "--"+boundary)
 	var textParts []string
@@ -2008,22 +2072,34 @@ func parseMIMEMultipart(body, boundary string) string {
 		var contentType string
 		var contentTransferEncoding string
 		var charset string
+		var nestedBoundary string
 
+		var currentHeader string
 		for _, line := range lines {
 			line = strings.TrimRight(line, "\r")
 
 			if inHeaders {
 				if line == "" {
+					// 处理完整的头部
+					if currentHeader != "" {
+						processHeader(currentHeader, &contentType, &charset, &nestedBoundary, &contentTransferEncoding)
+						currentHeader = ""
+					}
 					inHeaders = false
 					continue
 				}
 
-				if strings.HasPrefix(strings.ToLower(line), "content-type:") {
-					contentType = strings.TrimSpace(line[13:]) // 保持原始大小写用于提取charset
-					charset = extractCharsetFromContentType(contentType)
-					contentType = strings.ToLower(contentType) // 转为小写用于比较
-				} else if strings.HasPrefix(strings.ToLower(line), "content-transfer-encoding:") {
-					contentTransferEncoding = strings.TrimSpace(strings.ToLower(line[26:]))
+				// 检查是否是续行（以空格或制表符开头）
+				if strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t") {
+					// 这是前一个头部的续行
+					currentHeader += " " + strings.TrimSpace(line)
+				} else {
+					// 处理前一个完整的头部
+					if currentHeader != "" {
+						processHeader(currentHeader, &contentType, &charset, &nestedBoundary, &contentTransferEncoding)
+					}
+					// 开始新的头部
+					currentHeader = line
 				}
 			} else {
 				// 跳过以--开头的行（boundary分隔符）
@@ -2033,8 +2109,24 @@ func parseMIMEMultipart(body, boundary string) string {
 			}
 		}
 
+		// 处理最后一个头部（如果有的话）
+		if currentHeader != "" {
+			processHeader(currentHeader, &contentType, &charset, &nestedBoundary, &contentTransferEncoding)
+		}
+
 		content := strings.Join(contentLines, "\n")
 		content = strings.TrimSpace(content)
+
+		// 检查是否是嵌套的multipart结构
+		if strings.Contains(contentType, "multipart/") && nestedBoundary != "" {
+			log.Printf("检测到嵌套的multipart结构，boundary: %s", nestedBoundary)
+			// 递归解析嵌套的multipart
+			nestedContent := parseMIMEMultipart(content, nestedBoundary)
+			if nestedContent != "" {
+				textParts = append(textParts, nestedContent)
+			}
+			continue
+		}
 
 		// 根据编码方式解码内容
 		if contentTransferEncoding == "base64" {
@@ -2051,8 +2143,32 @@ func parseMIMEMultipart(body, boundary string) string {
 			}
 		} else if contentTransferEncoding == "quoted-printable" {
 			// 处理quoted-printable编码
+			preview := content
+			if len(preview) > 100 {
+				preview = preview[:100] + "..."
+			}
+			log.Printf("尝试解码quoted-printable (charset: %s): %s", charset, preview)
 			content = decodeQuotedPrintable(content)
-			content = convertToUTF8([]byte(content), charset)
+
+			// 检查是否是双重编码（Quoted-Printable + Base64）
+			if isBase64Content(content) {
+				log.Printf("检测到双重编码，尝试Base64解码")
+				if decoded, err := base64.StdEncoding.DecodeString(content); err == nil {
+					content = convertToUTF8(decoded, charset)
+					log.Printf("双重编码解码成功")
+				} else {
+					log.Printf("Base64解码失败: %v", err)
+					content = convertToUTF8([]byte(content), charset)
+				}
+			} else {
+				content = convertToUTF8([]byte(content), charset)
+			}
+
+			decodedPreview := content
+			if len(decodedPreview) > 100 {
+				decodedPreview = decodedPreview[:100] + "..."
+			}
+			log.Printf("quoted-printable解码并转换编码成功: %s", decodedPreview)
 		} else if charset != "" && charset != "utf-8" {
 			// 如果没有传输编码但有字符集，直接进行字符编码转换
 			content = convertToUTF8([]byte(content), charset)

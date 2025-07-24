@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/smtp"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -708,4 +709,192 @@ func (h *EmailHandler) buildEmailMessage(from, to, subject, body string) []byte 
 	message += body
 
 	return []byte(message)
+}
+
+// GetVerificationCode 获取邮件验证码
+func (h *EmailHandler) GetVerificationCode(c *gin.Context) {
+	c.Header("Content-Type", "application/json; charset=utf-8")
+
+	userID := c.GetInt("user_id")
+	mailbox := c.Query("mailbox")
+	sender := c.Query("sender")               // 可选：指定发件人过滤
+	subject := c.Query("subject")             // 可选：指定主题关键词过滤
+	emailIDStr := c.Query("email_id")         // 可选：指定特定邮件ID
+	limitStr := c.DefaultQuery("limit", "10") // 默认查询最近10封邮件
+
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil {
+		limit = 10
+	}
+
+	if mailbox == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"message": "邮箱地址不能为空",
+		})
+		return
+	}
+
+	// 验证邮箱是否属于当前用户
+	mailboxInfo, err := h.mailboxService.GetMailboxByEmail(mailbox)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"success": false,
+			"message": "邮箱不存在",
+		})
+		return
+	}
+
+	if mailboxInfo.UserID == nil || *mailboxInfo.UserID != userID {
+		c.JSON(http.StatusForbidden, gin.H{
+			"success": false,
+			"message": "无权访问此邮箱",
+		})
+		return
+	}
+
+	var emails []models.Email
+
+	// 如果指定了email_id，只查询特定邮件
+	if emailIDStr != "" {
+		emailID, parseErr := strconv.Atoi(emailIDStr)
+		if parseErr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"success": false,
+				"message": "邮件ID格式错误",
+			})
+			return
+		}
+
+		// 获取特定邮件
+		email, getErr := h.emailService.GetEmailByID(emailID, mailboxInfo.ID)
+		if getErr != nil {
+			c.JSON(http.StatusNotFound, gin.H{
+				"success": false,
+				"message": "邮件不存在或无权访问",
+			})
+			return
+		}
+		emails = []models.Email{*email}
+	} else {
+		// 获取邮件列表
+		var getErr error
+		emails, _, getErr = h.emailService.GetEmails(mailboxInfo.ID, "inbox", 1, limit)
+		if getErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"message": "获取邮件失败: " + getErr.Error(),
+			})
+			return
+		}
+	}
+
+	// 提取验证码
+	var results []map[string]interface{}
+
+	for _, email := range emails {
+		// 如果指定了email_id，跳过过滤条件检查
+		if emailIDStr == "" {
+			// 应用过滤条件
+			if sender != "" && !strings.Contains(strings.ToLower(email.FromAddr), strings.ToLower(sender)) {
+				continue
+			}
+			if subject != "" && !strings.Contains(strings.ToLower(email.Subject), strings.ToLower(subject)) {
+				continue
+			}
+		}
+
+		// 提取验证码
+		codes := extractVerificationCodes(email.Body)
+		if len(codes) > 0 {
+			results = append(results, map[string]interface{}{
+				"email_id":   email.ID,
+				"from":       email.FromAddr,
+				"subject":    email.Subject,
+				"created_at": email.CreatedAt,
+				"codes":      codes,
+			})
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    results,
+		"count":   len(results),
+	})
+}
+
+// extractVerificationCodes 从邮件内容中提取验证码
+func extractVerificationCodes(content string) []string {
+	var codes []string
+
+	// 常见的验证码模式
+	patterns := []string{
+		`\b\d{4,8}\b`,                   // 4-8位纯数字
+		`\b[A-Z0-9]{4,8}\b`,             // 4-8位大写字母和数字组合
+		`\b[a-zA-Z0-9]{4,8}\b`,          // 4-8位字母数字组合
+		`验证码[：:\s]*([A-Za-z0-9]{4,8})`,  // 中文"验证码"后跟代码
+		`验证码[：:\s]*(\d{4,8})`,           // 中文"验证码"后跟数字
+		`code[：:\s]*([A-Za-z0-9]{4,8})`, // 英文"code"后跟代码
+		`Code[：:\s]*([A-Za-z0-9]{4,8})`, // 英文"Code"后跟代码
+		`CODE[：:\s]*([A-Za-z0-9]{4,8})`, // 英文"CODE"后跟代码
+	}
+
+	// 使用正则表达式提取
+	for _, pattern := range patterns {
+		re := regexp.MustCompile(pattern)
+		matches := re.FindAllStringSubmatch(content, -1)
+
+		for _, match := range matches {
+			if len(match) > 1 {
+				// 有捕获组的情况
+				code := strings.TrimSpace(match[1])
+				if isValidVerificationCode(code) {
+					codes = append(codes, code)
+				}
+			} else if len(match) > 0 {
+				// 没有捕获组的情况
+				code := strings.TrimSpace(match[0])
+				if isValidVerificationCode(code) {
+					codes = append(codes, code)
+				}
+			}
+		}
+	}
+
+	// 去重
+	seen := make(map[string]bool)
+	var uniqueCodes []string
+	for _, code := range codes {
+		if !seen[code] {
+			seen[code] = true
+			uniqueCodes = append(uniqueCodes, code)
+		}
+	}
+
+	return uniqueCodes
+}
+
+// isValidVerificationCode 验证是否为有效的验证码
+func isValidVerificationCode(code string) bool {
+	// 长度检查
+	if len(code) < 4 || len(code) > 8 {
+		return false
+	}
+
+	// 排除一些明显不是验证码的内容
+	excludePatterns := []string{
+		`^\d{4}$`,                                // 排除4位年份
+		`^(19|20)\d{2}$`,                         // 排除年份
+		`^(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])$`, // 排除日期格式
+	}
+
+	for _, pattern := range excludePatterns {
+		matched, _ := regexp.MatchString(pattern, code)
+		if matched {
+			return false
+		}
+	}
+
+	return true
 }

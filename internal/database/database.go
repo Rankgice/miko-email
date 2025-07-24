@@ -7,6 +7,7 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 	"miko-email/internal/config"
+	
 )
 
 func Init(dbPath string) (*sql.DB, error) {
