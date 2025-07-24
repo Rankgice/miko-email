@@ -134,8 +134,7 @@ func (s *Service) RegisterUser(username, password, email, domainPrefix string, d
 		UpdatedAt:  time.Now(),
 	}
 
-	userModel := model.NewUserModel(tx)
-	if err := userModel.Create(tx, newUser); err != nil {
+	if err := s.svcCtx.UserModel.Create(tx, newUser); err != nil {
 		tx.Rollback()
 		return nil, err
 	}
@@ -160,8 +159,7 @@ func (s *Service) RegisterUser(username, password, email, domainPrefix string, d
 		UpdatedAt: time.Now(),
 	}
 
-	mailboxModel := model.NewMailboxModel(tx)
-	if err := mailboxModel.Create(tx, newMailbox); err != nil {
+	if err := s.svcCtx.MailboxModel.Create(tx, newMailbox); err != nil {
 		tx.Rollback()
 		return nil, err
 	}
@@ -169,28 +167,26 @@ func (s *Service) RegisterUser(username, password, email, domainPrefix string, d
 	// 如果有邀请人，增加邀请人的贡献度
 	if invitedBy != nil {
 		// 先尝试更新普通用户的贡献度
-		userModel := model.NewUserModel(tx)
-		inviterUser, err := userModel.GetById(*invitedBy)
+		inviterUser, err := s.svcCtx.UserModel.GetById(*invitedBy)
 		if err == nil {
 			// 是普通用户，更新贡献度
 			updateData := map[string]interface{}{
 				"contribution": inviterUser.Contribution + 1,
 				"updated_at":   time.Now(),
 			}
-			if err := userModel.MapUpdate(tx, *invitedBy, updateData); err != nil {
+			if err := s.svcCtx.UserModel.MapUpdate(tx, *invitedBy, updateData); err != nil {
 				tx.Rollback()
 				return nil, err
 			}
 		} else {
 			// 尝试更新管理员的贡献度
-			adminModel := model.NewAdminModel(tx)
-			inviterAdmin, err := adminModel.GetById(*invitedBy)
+			inviterAdmin, err := s.svcCtx.AdminModel.GetById(*invitedBy)
 			if err == nil {
 				updateData := map[string]interface{}{
 					"contribution": inviterAdmin.Contribution + 1,
 					"updated_at":   time.Now(),
 				}
-				if err := adminModel.MapUpdate(tx, *invitedBy, updateData); err != nil {
+				if err := s.svcCtx.AdminModel.MapUpdate(tx, *invitedBy, updateData); err != nil {
 					tx.Rollback()
 					return nil, err
 				}
@@ -201,6 +197,8 @@ func (s *Service) RegisterUser(username, password, email, domainPrefix string, d
 	if err := tx.Commit().Error; err != nil {
 		return nil, err
 	}
+
+	// 清空密码字段，不返回敏感信息
 	newUser.Password = ""
 	return newUser, nil
 }
