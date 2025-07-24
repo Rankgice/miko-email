@@ -280,8 +280,17 @@ func (s *Service) GetForwardStatistics(userID int) (map[string]interface{}, erro
 	}
 	stats["total_forwards"] = totalForwards
 
-	// 今日转发次数（这里简化处理，实际应该有专门的转发日志表）
-	stats["today_forwards"] = 0
+	// 今日转发次数（基于last_forward_at字段统计）
+	var todayForwards int
+	err = s.db.QueryRow(`
+		SELECT COUNT(*) FROM email_forwards ef
+		JOIN mailboxes m ON ef.mailbox_id = m.id
+		WHERE m.user_id = ? AND ef.last_forward_at >= datetime('now', 'start of day')
+	`, userID).Scan(&todayForwards)
+	if err != nil {
+		return nil, fmt.Errorf("查询今日转发次数失败: %w", err)
+	}
+	stats["today_forwards"] = todayForwards
 
 	return stats, nil
 }

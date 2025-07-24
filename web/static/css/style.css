@@ -189,19 +189,19 @@ body {
         z-index: 1000;
         transition: left 0.3s ease-in-out;
     }
-    
+
     .sidebar.show {
         left: 0;
     }
-    
+
     .main-content {
         margin-left: 0;
     }
-    
+
     .stats-card {
         margin-bottom: 15px;
     }
-    
+
     .stats-card .stats-number {
         font-size: 1.5rem;
     }

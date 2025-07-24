@@ -29,6 +29,7 @@ import (
 	"miko-email/internal/services/forward"
 	"miko-email/internal/services/smtp"
 
+	"github.com/jhillyerd/enmime/v2"
 	"miko-email/internal/models"
 )
 
@@ -1581,13 +1582,21 @@ func (s *Service) SaveEmailToSent(mailboxID int, fromAddr, toAddr, subject, body
 // parseEmailContent 解析邮件内容
 func (session *SMTPSession) parseEmailContent() (subject, body string) {
 	content := string(session.data)
+
+	// 首先尝试使用enmime解析
+	if parsedSubject, parsedBody := session.parseEmailWithEnmime(content); parsedSubject != "" || parsedBody != "" {
+		log.Printf("enmime解析成功")
+		return parsedSubject, parsedBody
+	}
+
+	log.Printf("enmime解析失败，使用原始解析方法")
+
+	// 回退到原始解析方法
 	lines := strings.Split(content, "\n")
 
 	var inHeaders = true
 	var bodyLines []string
 	var contentTransferEncoding string
-	var contentType string
-	var boundary string
 
 	for _, line := range lines {
 		line = strings.TrimRight(line, "\r")
@@ -1604,11 +1613,6 @@ func (session *SMTPSession) parseEmailContent() (subject, body string) {
 				subject = decodeEmailHeader(subject)
 			} else if strings.HasPrefix(strings.ToLower(line), "content-transfer-encoding:") {
 				contentTransferEncoding = strings.TrimSpace(strings.ToLower(line[26:]))
-			} else if strings.HasPrefix(strings.ToLower(line), "content-type:") {
-				contentType = strings.TrimSpace(strings.ToLower(line[13:]))
-				// 提取boundary（保持原始大小写）
-				originalLine := strings.TrimSpace(line[13:]) // 保持原始大小写
-				boundary = extractBoundaryFromContentType(originalLine)
 			}
 		} else {
 			bodyLines = append(bodyLines, line)
@@ -1617,40 +1621,19 @@ func (session *SMTPSession) parseEmailContent() (subject, body string) {
 
 	body = strings.Join(bodyLines, "\n")
 
-	// 处理MIME多部分邮件
-	log.Printf("Content-Type: %s, Boundary: %s", contentType, boundary)
+	// 原始解析方法的简单处理（作为enmime的备用方案）
+	log.Printf("使用原始解析方法处理邮件内容")
 
-	// 如果boundary为空但内容类型是multipart，尝试从正文中自动检测boundary
-	if strings.Contains(contentType, "multipart") && boundary == "" {
-		boundary = detectBoundaryFromBody(body)
-		log.Printf("自动检测到boundary: %s", boundary)
-	}
-
-	if strings.Contains(contentType, "multipart") && boundary != "" {
-		log.Printf("处理MIME多部分邮件，boundary: %s", boundary)
-		body = parseMIMEMultipart(body, boundary)
-	} else {
-		log.Printf("处理单部分邮件，编码: %s", contentTransferEncoding)
-		// 提取字符集
-		charset := extractCharsetFromContentType(contentType)
-
-		// 根据编码方式解码body
-		if contentTransferEncoding == "base64" {
-			cleanContent := strings.ReplaceAll(body, "\n", "")
-			cleanContent = strings.ReplaceAll(cleanContent, "\r", "")
-			cleanContent = strings.TrimSpace(cleanContent)
-			if decoded, err := base64.StdEncoding.DecodeString(cleanContent); err == nil {
-				// 进行字符编码转换
-				body = convertToUTF8(decoded, charset)
-			}
-		} else if contentTransferEncoding == "quoted-printable" {
-			// 处理quoted-printable编码
-			body = decodeQuotedPrintable(body)
-			body = convertToUTF8([]byte(body), charset)
-		} else if charset != "" && charset != "utf-8" {
-			// 如果没有传输编码但有字符集，直接进行字符编码转换
-			body = convertToUTF8([]byte(body), charset)
+	// 简单的编码处理
+	if contentTransferEncoding == "base64" {
+		cleanContent := strings.ReplaceAll(body, "\n", "")
+		cleanContent = strings.ReplaceAll(cleanContent, "\r", "")
+		cleanContent = strings.TrimSpace(cleanContent)
+		if decoded, err := base64.StdEncoding.DecodeString(cleanContent); err == nil {
+			body = string(decoded)
 		}
+	} else if contentTransferEncoding == "quoted-printable" {
+		body = decodeQuotedPrintable(body)
 	}
 
 	// 确保body是有效的UTF-8
@@ -1825,79 +1808,14 @@ func decodeQuotedPrintableHeaderSMTP(s string) string {
 	return result.String()
 }
 
-// extractBoundaryFromContentType 从Content-Type中提取boundary
-func extractBoundaryFromContentType(contentType string) string {
-	// 多种boundary格式的正则表达式
-	patterns := []string{
-		`boundary\s*=\s*"([^"]+)"`, // boundary="value"
-		`boundary\s*=\s*'([^']+)'`, // boundary='value'
-		`boundary\s*=\s*([^;\s]+)`, // boundary=value
-		`boundary\s*:\s*"([^"]+)"`, // boundary: "value"
-		`boundary\s*:\s*([^;\s]+)`, // boundary: value
-	}
-
-	for _, pattern := range patterns {
-		re := regexp.MustCompile(`(?i)` + pattern) // 不区分大小写
-		matches := re.FindStringSubmatch(contentType)
-		if len(matches) > 1 {
-			boundary := strings.TrimSpace(matches[1])
-			if boundary != "" {
-				log.Printf("提取到boundary: %s", boundary)
-				return boundary
-			}
-		}
-	}
-
-	log.Printf("未能提取boundary，Content-Type: %s", contentType)
-	return ""
-}
-
-// extractCharsetFromContentType 从Content-Type中提取字符集
+// 简化的字符集提取函数（仅用于备用解析）
 func extractCharsetFromContentType(contentType string) string {
-	// 查找charset参数
 	re := regexp.MustCompile(`charset\s*=\s*["']?([^"'\s;]+)["']?`)
 	matches := re.FindStringSubmatch(contentType)
 	if len(matches) > 1 {
 		return matches[1]
 	}
-	return "utf-8" // 默认UTF-8
-}
-
-// detectBoundaryFromBody 从邮件正文中自动检测boundary
-func detectBoundaryFromBody(body string) string {
-	lines := strings.Split(body, "\n")
-
-	// 查找以------=开头的行，这通常是boundary分隔符
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "------=") {
-			// 提取boundary（去掉前面的--）
-			if len(line) > 6 {
-				boundary := line[6:] // 去掉"------="
-				log.Printf("从正文检测到boundary: %s", boundary)
-				return boundary
-			}
-		}
-		// 检查Steam邮件和其他常见的boundary格式
-		if strings.HasPrefix(line, "--") && len(line) > 10 {
-			boundary := line[2:] // 去掉前面的"--"
-
-			// Steam邮件的boundary通常包含这些特征
-			if strings.Contains(boundary, "_") || strings.Contains(boundary, "=") ||
-				strings.Contains(boundary, "Boundary") || strings.Contains(boundary, "boundary") ||
-				len(boundary) > 15 { // 长boundary通常是有效的
-
-				// 验证这是一个有效的boundary
-				if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_=\-]+$`, boundary); matched {
-					log.Printf("从正文检测到boundary (Steam/通用格式): %s", boundary)
-					return boundary
-				}
-			}
-		}
-	}
-
-	log.Printf("未能从正文检测到boundary")
-	return ""
+	return "utf-8"
 }
 
 // getEncodingByCharset 根据字符集名称获取编码器
@@ -2041,158 +1959,6 @@ func isBase64Content(content string) bool {
 	return true
 }
 
-// processHeader 处理单个邮件头部
-func processHeader(header string, contentType, charset, nestedBoundary, contentTransferEncoding *string) {
-	if strings.HasPrefix(strings.ToLower(header), "content-type:") {
-		*contentType = strings.TrimSpace(header[13:]) // 保持原始大小写用于提取charset
-		*charset = extractCharsetFromContentType(*contentType)
-		// 提取嵌套的boundary
-		*nestedBoundary = extractBoundaryFromContentType(*contentType)
-		*contentType = strings.ToLower(*contentType) // 转为小写用于比较
-	} else if strings.HasPrefix(strings.ToLower(header), "content-transfer-encoding:") {
-		*contentTransferEncoding = strings.TrimSpace(strings.ToLower(header[26:]))
-	}
-}
-
-// parseMIMEMultipart 解析MIME多部分邮件（支持递归解析嵌套结构）
-func parseMIMEMultipart(body, boundary string) string {
-	parts := strings.Split(body, "--"+boundary)
-	var textParts []string
-	var htmlParts []string
-
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		if part == "" || part == "--" {
-			continue
-		}
-
-		// 分离头部和内容
-		lines := strings.Split(part, "\n")
-		var inHeaders = true
-		var contentLines []string
-		var contentType string
-		var contentTransferEncoding string
-		var charset string
-		var nestedBoundary string
-
-		var currentHeader string
-		for _, line := range lines {
-			line = strings.TrimRight(line, "\r")
-
-			if inHeaders {
-				if line == "" {
-					// 处理完整的头部
-					if currentHeader != "" {
-						processHeader(currentHeader, &contentType, &charset, &nestedBoundary, &contentTransferEncoding)
-						currentHeader = ""
-					}
-					inHeaders = false
-					continue
-				}
-
-				// 检查是否是续行（以空格或制表符开头）
-				if strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t") {
-					// 这是前一个头部的续行
-					currentHeader += " " + strings.TrimSpace(line)
-				} else {
-					// 处理前一个完整的头部
-					if currentHeader != "" {
-						processHeader(currentHeader, &contentType, &charset, &nestedBoundary, &contentTransferEncoding)
-					}
-					// 开始新的头部
-					currentHeader = line
-				}
-			} else {
-				// 跳过以--开头的行（boundary分隔符）
-				if !strings.HasPrefix(line, "--") {
-					contentLines = append(contentLines, line)
-				}
-			}
-		}
-
-		// 处理最后一个头部（如果有的话）
-		if currentHeader != "" {
-			processHeader(currentHeader, &contentType, &charset, &nestedBoundary, &contentTransferEncoding)
-		}
-
-		content := strings.Join(contentLines, "\n")
-		content = strings.TrimSpace(content)
-
-		// 检查是否是嵌套的multipart结构
-		if strings.Contains(contentType, "multipart/") && nestedBoundary != "" {
-			log.Printf("检测到嵌套的multipart结构，boundary: %s", nestedBoundary)
-			// 递归解析嵌套的multipart
-			nestedContent := parseMIMEMultipart(content, nestedBoundary)
-			if nestedContent != "" {
-				textParts = append(textParts, nestedContent)
-			}
-			continue
-		}
-
-		// 根据编码方式解码内容
-		if contentTransferEncoding == "base64" {
-			cleanContent := strings.ReplaceAll(content, "\n", "")
-			cleanContent = strings.ReplaceAll(cleanContent, "\r", "")
-			cleanContent = strings.TrimSpace(cleanContent)
-			log.Printf("尝试解码base64 (charset: %s): %s", charset, cleanContent)
-			if decoded, err := base64.StdEncoding.DecodeString(cleanContent); err == nil {
-				// 先进行base64解码，然后进行字符编码转换
-				content = convertToUTF8(decoded, charset)
-				log.Printf("base64解码并转换编码成功: %s", content)
-			} else {
-				log.Printf("base64解码失败: %v", err)
-			}
-		} else if contentTransferEncoding == "quoted-printable" {
-			// 处理quoted-printable编码
-			preview := content
-			if len(preview) > 100 {
-				preview = preview[:100] + "..."
-			}
-			log.Printf("尝试解码quoted-printable (charset: %s): %s", charset, preview)
-			content = decodeQuotedPrintable(content)
-
-			// 检查是否是双重编码（Quoted-Printable + Base64）
-			if isBase64Content(content) {
-				log.Printf("检测到双重编码，尝试Base64解码")
-				if decoded, err := base64.StdEncoding.DecodeString(content); err == nil {
-					content = convertToUTF8(decoded, charset)
-					log.Printf("双重编码解码成功")
-				} else {
-					log.Printf("Base64解码失败: %v", err)
-					content = convertToUTF8([]byte(content), charset)
-				}
-			} else {
-				content = convertToUTF8([]byte(content), charset)
-			}
-
-			decodedPreview := content
-			if len(decodedPreview) > 100 {
-				decodedPreview = decodedPreview[:100] + "..."
-			}
-			log.Printf("quoted-printable解码并转换编码成功: %s", decodedPreview)
-		} else if charset != "" && charset != "utf-8" {
-			// 如果没有传输编码但有字符集，直接进行字符编码转换
-			content = convertToUTF8([]byte(content), charset)
-		}
-
-		// 根据内容类型分类
-		if strings.Contains(contentType, "text/plain") {
-			textParts = append(textParts, content)
-		} else if strings.Contains(contentType, "text/html") {
-			htmlParts = append(htmlParts, content)
-		}
-	}
-
-	// 优先返回纯文本内容，如果没有则返回HTML内容
-	if len(textParts) > 0 {
-		return strings.Join(textParts, "\n\n")
-	} else if len(htmlParts) > 0 {
-		return strings.Join(htmlParts, "\n\n")
-	}
-
-	return body // 如果解析失败，返回原始内容
-}
-
 // GetEmails 获取邮件列表
 func (s *Service) GetEmails(mailboxID int, folder string, page, limit int) ([]models.Email, int, error) {
 	offset := (page - 1) * limit
@@ -2270,6 +2036,76 @@ func (s *Service) MarkAsRead(emailID, mailboxID int) error {
 	`, time.Now(), emailID, mailboxID)
 
 	return err
+}
+
+// parseEmailWithEnmime 使用enmime库解析邮件内容
+func (session *SMTPSession) parseEmailWithEnmime(rawEmail string) (subject, body string) {
+	log.Printf("开始使用enmime解析邮件")
+
+	// 创建enmime解析器，禁用字符检测让库自己处理
+	parser := enmime.NewParser(enmime.DisableCharacterDetection(true))
+
+	// 解析邮件
+	env, err := parser.ReadEnvelope(strings.NewReader(rawEmail))
+	if err != nil {
+		log.Printf("enmime解析失败: %v", err)
+		return "", ""
+	}
+
+	log.Printf("enmime解析成功")
+
+	// 获取主题
+	subject = env.GetHeader("Subject")
+	if subject != "" {
+		log.Printf("解析到主题: %s", subject)
+	}
+
+	// 优先使用HTML内容以保持格式，如果没有则使用文本内容
+	if env.HTML != "" {
+		log.Printf("使用HTML内容，长度: %d", len(env.HTML))
+		body = env.HTML // 保留HTML格式
+	} else if env.Text != "" {
+		log.Printf("使用文本内容，长度: %d", len(env.Text))
+		// 将纯文本转换为HTML格式以便在前端正确显示
+		body = strings.ReplaceAll(env.Text, "\n", "<br>")
+		body = strings.ReplaceAll(body, "\r", "")
+	} else {
+		log.Printf("未找到可用的邮件内容")
+		return subject, ""
+	}
+
+	return subject, body
+}
+
+// cleanText 清理文本内容
+func cleanText(text string) string {
+	// 移除UTF-8 BOM字符
+	text = strings.ReplaceAll(text, string('\uFEFF'), " ")
+
+	// 规范化空白字符
+	text = regexp.MustCompile(`\s+`).ReplaceAllString(text, " ")
+
+	// 移除首尾空白
+	text = strings.TrimSpace(text)
+
+	return text
+}
+
+// stripHTMLTags 简单的HTML标签移除
+func stripHTMLTags(html string) string {
+	// 移除HTML标签
+	re := regexp.MustCompile(`<[^>]*>`)
+	text := re.ReplaceAllString(html, " ")
+
+	// 解码HTML实体
+	text = strings.ReplaceAll(text, "&nbsp;", " ")
+	text = strings.ReplaceAll(text, "&amp;", "&")
+	text = strings.ReplaceAll(text, "&lt;", "<")
+	text = strings.ReplaceAll(text, "&gt;", ">")
+	text = strings.ReplaceAll(text, "&quot;", "\"")
+	text = strings.ReplaceAll(text, "&#39;", "'")
+
+	return text
 }
 
 // DeleteEmail 删除邮件

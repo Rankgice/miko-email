@@ -1,12 +1,15 @@
 package handlers
 
 import (
+	"encoding/base64"
 	"fmt"
 	"log"
 	"miko-email/internal/svc"
+	"mime"
 	"net"
 	"net/http"
 	"net/smtp"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -52,6 +55,12 @@ type SendEmailRequest struct {
 	Content string `form:"content" binding:"required"`
 }
 
+type EmailAttachment struct {
+	Filename string
+	Content  []byte
+	MimeType string
+}
+
 // SendEmail 发送邮件
 func (h *EmailHandler) SendEmail(c *gin.Context) {
 	// 设置正确的Content-Type响应头
@@ -78,6 +87,40 @@ func (h *EmailHandler) SendEmail(c *gin.Context) {
 	if req.From == "" || req.To == "" || req.Subject == "" || req.Content == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "请求参数错误"})
 		return
+	}
+
+	// 处理附件
+	var attachments []EmailAttachment
+	if c.Request.MultipartForm != nil && c.Request.MultipartForm.File != nil {
+		files := c.Request.MultipartForm.File["attachments"]
+		for _, fileHeader := range files {
+			file, err := fileHeader.Open()
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "附件读取失败: " + err.Error()})
+				return
+			}
+			defer file.Close()
+
+			// 读取文件内容
+			content := make([]byte, fileHeader.Size)
+			_, err = file.Read(content)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "附件内容读取失败: " + err.Error()})
+				return
+			}
+
+			// 检查文件大小限制（10MB）
+			if fileHeader.Size > 10*1024*1024 {
+				c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": fmt.Sprintf("附件 %s 超过10MB限制", fileHeader.Filename)})
+				return
+			}
+
+			attachments = append(attachments, EmailAttachment{
+				Filename: fileHeader.Filename,
+				Content:  content,
+				MimeType: fileHeader.Header.Get("Content-Type"),
+			})
+		}
 	}
 
 	// 获取当前用户信息
@@ -136,7 +179,13 @@ func (h *EmailHandler) SendEmail(c *gin.Context) {
 		}
 
 		// 统一通过MX发送邮件（无论是内部还是外部邮件）
-		sendErr = h.smtpClient.SendEmail(req.From, recipient, req.Subject, req.Content)
+		if len(attachments) > 0 {
+			// 构建MIME邮件内容
+			mimeContent := h.buildMIMEMessage(req.From, recipient, req.Subject, req.Content, attachments)
+			sendErr = h.smtpClient.SendMIMEEmail(req.From, recipient, mimeContent)
+		} else {
+			sendErr = h.smtpClient.SendEmail(req.From, recipient, req.Subject, req.Content)
+		}
 
 		// 记录发送尝试
 		h.smtpClient.LogSendAttempt(req.From, recipient, req.Subject, sendErr)
@@ -629,6 +678,65 @@ func (h *EmailHandler) GetForwardStatistics(c *gin.Context) {
 		"success": true,
 		"data":    stats,
 	})
+}
+
+// buildMIMEMessage 构建MIME格式的邮件内容
+func (h *EmailHandler) buildMIMEMessage(from, to, subject, body string, attachments []EmailAttachment) string {
+	boundary := fmt.Sprintf("----=_NextPart_%d", time.Now().Unix())
+
+	var message strings.Builder
+
+	// 邮件头部
+	message.WriteString(fmt.Sprintf("From: %s\r\n", from))
+	message.WriteString(fmt.Sprintf("To: %s\r\n", to))
+	message.WriteString(fmt.Sprintf("Subject: %s\r\n", subject))
+	message.WriteString("MIME-Version: 1.0\r\n")
+	message.WriteString(fmt.Sprintf("Content-Type: multipart/mixed; boundary=\"%s\"\r\n", boundary))
+	message.WriteString("\r\n")
+
+	// 邮件正文部分
+	message.WriteString(fmt.Sprintf("--%s\r\n", boundary))
+	message.WriteString("Content-Type: text/html; charset=utf-8\r\n")
+	message.WriteString("Content-Transfer-Encoding: 8bit\r\n")
+	message.WriteString("\r\n")
+	message.WriteString(body)
+	message.WriteString("\r\n")
+
+	// 附件部分
+	for _, attachment := range attachments {
+		message.WriteString(fmt.Sprintf("--%s\r\n", boundary))
+
+		// 确定MIME类型
+		mimeType := attachment.MimeType
+		if mimeType == "" {
+			mimeType = mime.TypeByExtension(filepath.Ext(attachment.Filename))
+			if mimeType == "" {
+				mimeType = "application/octet-stream"
+			}
+		}
+
+		message.WriteString(fmt.Sprintf("Content-Type: %s\r\n", mimeType))
+		message.WriteString("Content-Transfer-Encoding: base64\r\n")
+		message.WriteString(fmt.Sprintf("Content-Disposition: attachment; filename=\"%s\"\r\n", attachment.Filename))
+		message.WriteString("\r\n")
+
+		// Base64编码附件内容
+		encoded := base64.StdEncoding.EncodeToString(attachment.Content)
+		// 每76个字符换行
+		for i := 0; i < len(encoded); i += 76 {
+			end := i + 76
+			if end > len(encoded) {
+				end = len(encoded)
+			}
+			message.WriteString(encoded[i:end])
+			message.WriteString("\r\n")
+		}
+	}
+
+	// 结束边界
+	message.WriteString(fmt.Sprintf("--%s--\r\n", boundary))
+
+	return message.String()
 }
 
 // sendThroughLocalSMTP 通过本地SMTP服务器发送邮件

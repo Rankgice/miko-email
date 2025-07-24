@@ -279,3 +279,22 @@ func (h *MailboxHandler) GetMailboxStats(c *gin.Context) {
 		"data":    stats,
 	})
 }
+
+// GetUserStats 获取用户统计信息
+func (h *MailboxHandler) GetUserStats(c *gin.Context) {
+	userID := c.GetInt("user_id")
+
+	stats, err := h.mailboxService.GetUserStats(userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"message": "获取统计信息失败: " + err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    stats,
+	})
+}

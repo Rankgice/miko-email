@@ -149,6 +149,7 @@ func (s *Server) setupRoutes(svcCtx *svc.ServiceContext) {
 			apiAuth.POST("/mailboxes/batch", mailboxHandler.BatchCreateMailboxes)
 			apiAuth.GET("/mailboxes/:id/password", mailboxHandler.GetMailboxPassword)
 			apiAuth.DELETE("/mailboxes/:id", mailboxHandler.DeleteMailbox)
+			apiAuth.GET("/mailboxes/stats", mailboxHandler.GetUserStats)
 
 			// 邮件相关
 			apiAuth.GET("/emails", emailHandler.GetEmails)

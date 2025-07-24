@@ -378,3 +378,149 @@ func (c *OutboundClient) LogSendAttempt(from, to, subject string, err error) {
 		log.Printf("✅ MX发送成功 - From: %s, To: %s, Subject: %s", from, to, subject)
 	}
 }
+
+// SendMIMEEmail 发送MIME格式邮件（支持附件）
+func (c *OutboundClient) SendMIMEEmail(from, to, mimeContent string) error {
+	// 验证发件人是否为本域名邮箱
+	if !c.isLocalEmail(from) {
+		return fmt.Errorf("发件人必须是本域名邮箱: %s", from)
+	}
+
+	// 提取收件人域名
+	toDomain := extractDomain(to)
+	if toDomain == "" {
+		return fmt.Errorf("无效的收件人邮箱地址: %s", to)
+	}
+
+	log.Printf("开始MX直接发送MIME邮件: %s -> %s", from, to)
+
+	// 检查是否为本地域名，如果是，使用本地MX服务器
+	if c.isLocalDomain(toDomain) {
+		return c.sendMIMEToLocalMX(from, to, mimeContent)
+	}
+
+	// 外部域名，通过MX记录发送
+	return c.sendMIMEToExternalMX(from, to, toDomain, mimeContent)
+}
+
+// sendMIMEToLocalMX 发送MIME邮件到本地MX服务器
+func (c *OutboundClient) sendMIMEToLocalMX(from, to, mimeContent string) error {
+	log.Printf("本地域名邮件，使用本地MX服务器: %s", extractDomain(to))
+	log.Printf("尝试连接本地MX服务器: localhost:25")
+
+	// 连接本地SMTP服务器
+	conn, err := net.Dial("tcp", "localhost:25")
+	if err != nil {
+		return fmt.Errorf("连接本地MX服务器失败: %w", err)
+	}
+	defer conn.Close()
+
+	client, err := smtp.NewClient(conn, "localhost")
+	if err != nil {
+		return fmt.Errorf("创建SMTP客户端失败: %w", err)
+	}
+	defer client.Quit()
+
+	// 设置发件人
+	if err := client.Mail(from); err != nil {
+		return fmt.Errorf("设置发件人失败: %w", err)
+	}
+
+	// 设置收件人
+	if err := client.Rcpt(to); err != nil {
+		return fmt.Errorf("设置收件人失败: %w", err)
+	}
+
+	// 发送邮件内容
+	w, err := client.Data()
+	if err != nil {
+		return fmt.Errorf("开始发送邮件内容失败: %w", err)
+	}
+
+	_, err = w.Write([]byte(mimeContent))
+	if err != nil {
+		return fmt.Errorf("写入邮件内容失败: %w", err)
+	}
+
+	err = w.Close()
+	if err != nil {
+		return fmt.Errorf("完成邮件内容发送失败: %w", err)
+	}
+
+	log.Printf("✅ 本地MX发送成功: %s -> %s (通过 localhost:25)", from, to)
+	return nil
+}
+
+// sendMIMEToExternalMX 发送MIME邮件到外部MX服务器
+func (c *OutboundClient) sendMIMEToExternalMX(from, to, domain, mimeContent string) error {
+	// 查询MX记录
+	mxRecords, err := net.LookupMX(domain)
+	if err != nil {
+		return fmt.Errorf("查询MX记录失败: %w", err)
+	}
+
+	if len(mxRecords) == 0 {
+		return fmt.Errorf("域名 %s 没有MX记录", domain)
+	}
+
+	// 按优先级排序并尝试连接
+	for i, mx := range mxRecords {
+		log.Printf("使用MX服务器: %s (优先级: %d)", mx.Host, mx.Pref)
+
+		err = c.sendMIMEToMXServer(from, to, mx.Host, mimeContent, i+1)
+		if err == nil {
+			log.Printf("✅ MX直接发送成功: %s -> %s", from, to)
+			return nil
+		}
+
+		log.Printf("MX服务器 %s 发送失败: %v", mx.Host, err)
+	}
+
+	return fmt.Errorf("所有MX服务器都发送失败")
+}
+
+// sendMIMEToMXServer 发送MIME邮件到指定MX服务器
+func (c *OutboundClient) sendMIMEToMXServer(from, to, mxHost, mimeContent string, attempt int) error {
+	log.Printf("尝试连接MX服务器 %s:25 (第%d次)", mxHost, attempt)
+
+	// 连接MX服务器
+	conn, err := net.DialTimeout("tcp", mxHost+":25", 30*time.Second)
+	if err != nil {
+		return fmt.Errorf("连接MX服务器失败: %w", err)
+	}
+	defer conn.Close()
+
+	client, err := smtp.NewClient(conn, mxHost)
+	if err != nil {
+		return fmt.Errorf("创建SMTP客户端失败: %w", err)
+	}
+	defer client.Quit()
+
+	// 设置发件人
+	if err := client.Mail(from); err != nil {
+		return fmt.Errorf("设置发件人失败: %w", err)
+	}
+
+	// 设置收件人
+	if err := client.Rcpt(to); err != nil {
+		return fmt.Errorf("设置收件人失败: %w", err)
+	}
+
+	// 发送邮件内容
+	w, err := client.Data()
+	if err != nil {
+		return fmt.Errorf("开始发送邮件内容失败: %w", err)
+	}
+
+	_, err = w.Write([]byte(mimeContent))
+	if err != nil {
+		return fmt.Errorf("写入邮件内容失败: %w", err)
+	}
+
+	err = w.Close()
+	if err != nil {
+		return fmt.Errorf("完成邮件内容发送失败: %w", err)
+	}
+
+	return nil
+}

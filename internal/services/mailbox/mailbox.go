@@ -459,9 +459,32 @@ func (s *Service) DeleteMailbox(mailboxID, userID int, isAdmin bool) error {
 		return fmt.Errorf("无权限删除此邮箱")
 	}
 
-	// 软删除邮箱
-	_, err = s.db.Exec("UPDATE mailboxes SET is_active = 0, updated_at = ? WHERE id = ?", time.Now(), mailboxID)
-	return err
+	// 硬删除邮箱及相关数据
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// 删除相关邮件
+	_, err = tx.Exec("DELETE FROM emails WHERE mailbox_id = ?", mailboxID)
+	if err != nil {
+		return err
+	}
+
+	// 删除转发规则
+	_, err = tx.Exec("DELETE FROM email_forwards WHERE mailbox_id = ?", mailboxID)
+	if err != nil {
+		return err
+	}
+
+	// 删除邮箱
+	_, err = tx.Exec("DELETE FROM mailboxes WHERE id = ?", mailboxID)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
 
 // 管理员邮箱管理方法
@@ -601,6 +624,60 @@ func (s *Service) GetMailboxStats(mailboxID int) (*MailboxStats, error) {
 
 	if lastActivity.Valid {
 		stats.LastActivity = &lastActivity.Time
+	}
+
+	return stats, nil
+}
+
+// UserStats 用户统计信息
+type UserStats struct {
+	TotalMailboxes int `json:"total_mailboxes"`
+	UnreadEmails   int `json:"unread_emails"`
+	SentEmails     int `json:"sent_emails"`
+	TotalEmails    int `json:"total_emails"`
+}
+
+// GetUserStats 获取用户统计信息
+func (s *Service) GetUserStats(userID int) (*UserStats, error) {
+	stats := &UserStats{}
+
+	// 获取用户的邮箱数量
+	err := s.db.QueryRow(
+		"SELECT COUNT(*) FROM mailboxes WHERE user_id = ? AND is_active = 1",
+		userID,
+	).Scan(&stats.TotalMailboxes)
+	if err != nil {
+		return nil, err
+	}
+
+	// 获取未读邮件数量（用户所有邮箱的未读邮件）
+	err = s.db.QueryRow(`
+		SELECT COUNT(*) FROM emails e
+		JOIN mailboxes m ON e.mailbox_id = m.id
+		WHERE m.user_id = ? AND m.is_active = 1 AND e.folder = 'inbox' AND e.is_read = 0
+	`, userID).Scan(&stats.UnreadEmails)
+	if err != nil {
+		return nil, err
+	}
+
+	// 获取已发送邮件数量
+	err = s.db.QueryRow(`
+		SELECT COUNT(*) FROM emails e
+		JOIN mailboxes m ON e.mailbox_id = m.id
+		WHERE m.user_id = ? AND m.is_active = 1 AND e.folder = 'sent'
+	`, userID).Scan(&stats.SentEmails)
+	if err != nil {
+		return nil, err
+	}
+
+	// 获取总邮件数量
+	err = s.db.QueryRow(`
+		SELECT COUNT(*) FROM emails e
+		JOIN mailboxes m ON e.mailbox_id = m.id
+		WHERE m.user_id = ? AND m.is_active = 1
+	`, userID).Scan(&stats.TotalEmails)
+	if err != nil {
+		return nil, err
 	}
 
 	return stats, nil
