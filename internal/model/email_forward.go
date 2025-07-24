@@ -83,9 +83,6 @@ func (m *EmailForwardModel) Delete(emailForward *EmailForward) error {
 func (m *EmailForwardModel) GetById(id int64) (*EmailForward, error) {
 	var emailForward EmailForward
 	if err := m.db.First(&emailForward, id).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil // 如果没有找到记录，返回nil
-		}
 		return nil, err
 	}
 	return &emailForward, nil
@@ -95,9 +92,6 @@ func (m *EmailForwardModel) GetById(id int64) (*EmailForward, error) {
 func (m *EmailForwardModel) GetByIdAndMailboxId(id, mailboxId int64) (*EmailForward, error) {
 	var emailForward EmailForward
 	if err := m.db.Where("id = ? AND mailbox_id = ?", id, mailboxId).First(&emailForward).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil
-		}
 		return nil, err
 	}
 	return &emailForward, nil

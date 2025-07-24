@@ -1,7 +1,6 @@
 package model
 
 import (
-	"errors"
 	"time"
 
 	"gorm.io/gorm"
@@ -78,9 +77,6 @@ func (m *MailboxModel) Delete(mailbox *Mailbox) error {
 func (m *MailboxModel) GetById(id int64) (*Mailbox, error) {
 	var mailbox Mailbox
 	if err := m.db.First(&mailbox, id).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil // 如果没有找到记录，返回nil
-		}
 		return nil, err
 	}
 	return &mailbox, nil
@@ -90,9 +86,6 @@ func (m *MailboxModel) GetById(id int64) (*Mailbox, error) {
 func (m *MailboxModel) GetByEmail(email string) (*Mailbox, error) {
 	var mailbox Mailbox
 	if err := m.db.Where("email = ?", email).First(&mailbox).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil
-		}
 		return nil, err
 	}
 	return &mailbox, nil
@@ -230,9 +223,6 @@ func (m *MailboxModel) GetMailboxWithOwner(id int64) (*Mailbox, error) {
 	var mailbox Mailbox
 	err := m.db.Preload("User").Preload("Admin").First(&mailbox, id).Error
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil
-		}
 		return nil, err
 	}
 	return &mailbox, nil

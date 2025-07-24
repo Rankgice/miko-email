@@ -1,7 +1,6 @@
 package model
 
 import (
-	"errors"
 	"time"
 
 	"gorm.io/gorm"
@@ -79,9 +78,6 @@ func (m *EmailModel) Delete(email *Email) error {
 func (m *EmailModel) GetById(id int64) (*Email, error) {
 	var email Email
 	if err := m.db.First(&email, id).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil // 如果没有找到记录，返回nil
-		}
 		return nil, err
 	}
 	return &email, nil
@@ -91,9 +87,6 @@ func (m *EmailModel) GetById(id int64) (*Email, error) {
 func (m *EmailModel) GetByIdAndMailboxId(id, mailboxId int64) (*Email, error) {
 	var email Email
 	if err := m.db.Where("id = ? AND mailbox_id = ?", id, mailboxId).First(&email).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil
-		}
 		return nil, err
 	}
 	return &email, nil

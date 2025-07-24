@@ -1,7 +1,6 @@
 package model
 
 import (
-	"errors"
 	"time"
 
 	"gorm.io/gorm"
@@ -78,9 +77,6 @@ func (m *AdminModel) Delete(admin *Admin) error {
 func (m *AdminModel) GetById(id int64) (*Admin, error) {
 	var admin Admin
 	if err := m.db.First(&admin, id).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil // 如果没有找到记录，返回nil
-		}
 		return nil, err
 	}
 	return &admin, nil
@@ -90,9 +86,6 @@ func (m *AdminModel) GetById(id int64) (*Admin, error) {
 func (m *AdminModel) GetByUsername(username string) (*Admin, error) {
 	var admin Admin
 	if err := m.db.Where("username = ?", username).First(&admin).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil
-		}
 		return nil, err
 	}
 	return &admin, nil
@@ -102,9 +95,6 @@ func (m *AdminModel) GetByUsername(username string) (*Admin, error) {
 func (m *AdminModel) GetByEmail(email string) (*Admin, error) {
 	var admin Admin
 	if err := m.db.Where("email = ?", email).First(&admin).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil
-		}
 		return nil, err
 	}
 	return &admin, nil
@@ -114,9 +104,6 @@ func (m *AdminModel) GetByEmail(email string) (*Admin, error) {
 func (m *AdminModel) GetByInviteCode(inviteCode string) (*Admin, error) {
 	var admin Admin
 	if err := m.db.Where("invite_code = ?", inviteCode).First(&admin).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil
-		}
 		return nil, err
 	}
 	return &admin, nil
@@ -228,9 +215,6 @@ func (m *AdminModel) AuthenticateAdmin(username string) (*Admin, error) {
 	var admin Admin
 	err := m.db.Where("username = ? AND is_active = ?", username, true).First(&admin).Error
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil
-		}
 		return nil, err
 	}
 	return &admin, nil

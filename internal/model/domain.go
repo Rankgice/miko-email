@@ -1,7 +1,6 @@
 package model
 
 import (
-	"errors"
 	"time"
 
 	"gorm.io/gorm"
@@ -78,9 +77,6 @@ func (m *DomainModel) Delete(domain *Domain) error {
 func (m *DomainModel) GetById(id int64) (*Domain, error) {
 	var domain Domain
 	if err := m.db.First(&domain, id).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil // 如果没有找到记录，返回nil
-		}
 		return nil, err
 	}
 	return &domain, nil
@@ -90,9 +86,6 @@ func (m *DomainModel) GetById(id int64) (*Domain, error) {
 func (m *DomainModel) GetByName(name string) (*Domain, error) {
 	var domain Domain
 	if err := m.db.Where("name = ?", name).First(&domain).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil
-		}
 		return nil, err
 	}
 	return &domain, nil

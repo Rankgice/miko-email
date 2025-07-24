@@ -89,9 +89,6 @@ func (m *ProxyModel) Delete(proxy *Proxy) error {
 func (m *ProxyModel) GetById(id int64) (*Proxy, error) {
 	var proxy Proxy
 	if err := m.db.First(&proxy, id).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil // 如果没有找到记录，返回nil
-		}
 		return nil, err
 	}
 	return &proxy, nil
