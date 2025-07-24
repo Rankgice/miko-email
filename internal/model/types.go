@@ -2,21 +2,6 @@ package model
 
 import "time"
 
-// ProxyReq 代理查询参数
-type ProxyReq struct {
-	Id        int64     `json:"id"`
-	IpAddress string    `json:"ip_address"`
-	Port      string    `json:"port"`
-	Username  string    `json:"username"`
-	Password  string    `json:"password"`
-	Type      string    `json:"type"`
-	AddTime   time.Time `json:"add_time"`
-	Status    int       `json:"status"`
-	Remark    string    `json:"remark"`
-	Page      int       `json:"page"`
-	PageSize  int       `json:"page_size"`
-}
-
 // UserReq 用户查询参数
 type UserReq struct {
 	Id           int64     `json:"id"`

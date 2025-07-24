@@ -21,7 +21,7 @@ type Mailbox struct {
 
 // TableName 指定表名
 func (Mailbox) TableName() string {
-	return "mailboxes"
+	return "mailbox"
 }
 
 // MailboxModel 邮箱模型

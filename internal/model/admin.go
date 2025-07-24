@@ -21,7 +21,7 @@ type Admin struct {
 
 // TableName 指定表名
 func (Admin) TableName() string {
-	return "admins"
+	return "admin"
 }
 
 // AdminModel 管理员模型

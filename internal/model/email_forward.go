@@ -26,7 +26,7 @@ type EmailForward struct {
 
 // TableName 指定表名
 func (EmailForward) TableName() string {
-	return "email_forwards"
+	return "email_forward"
 }
 
 // EmailForwardModel 邮件转发模型

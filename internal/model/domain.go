@@ -21,7 +21,7 @@ type Domain struct {
 
 // TableName 指定表名
 func (Domain) TableName() string {
-	return "domains"
+	return "domain"
 }
 
 // DomainModel 域名模型
