@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -24,7 +25,7 @@ func (s *Service) AuthenticateUser(username, password string) (*model.User, erro
 	// 使用UserModel获取用户
 	user, err := s.svcCtx.UserModel.GetByUsername(username)
 	if err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, fmt.Errorf("用户不存在")
 		}
 		return nil, err
@@ -45,7 +46,7 @@ func (s *Service) AuthenticateAdmin(username, password string) (*model.Admin, er
 	// 使用AdminModel获取管理员
 	admin, err := s.svcCtx.AdminModel.GetByUsername(username)
 	if err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, fmt.Errorf("管理员不存在或已被禁用")
 		}
 		return nil, err
@@ -65,7 +66,7 @@ func (s *Service) AuthenticateAdmin(username, password string) (*model.Admin, er
 func (s *Service) RegisterUser(username, password, email, domainPrefix string, domainID int64, inviteCode string) (*model.User, error) {
 	// 检查用户名是否已存在
 	existingUser, err := s.svcCtx.UserModel.GetByUsername(username)
-	if err != nil && err != gorm.ErrRecordNotFound {
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
 	}
 	if existingUser != nil {
@@ -74,7 +75,7 @@ func (s *Service) RegisterUser(username, password, email, domainPrefix string, d
 
 	// 检查邮箱是否已存在
 	existingUser, err = s.svcCtx.UserModel.GetByEmail(email)
-	if err != nil && err != gorm.ErrRecordNotFound {
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
 	}
 	if existingUser != nil {
@@ -86,7 +87,7 @@ func (s *Service) RegisterUser(username, password, email, domainPrefix string, d
 	if inviteCode != "" {
 		// 先检查普通用户的邀请码
 		inviterUser, err := s.svcCtx.UserModel.GetByInviteCode(inviteCode)
-		if err != nil && err != gorm.ErrRecordNotFound {
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, err
 		}
 		if inviterUser != nil {
@@ -94,7 +95,7 @@ func (s *Service) RegisterUser(username, password, email, domainPrefix string, d
 		} else {
 			// 再检查管理员的邀请码
 			inviterAdmin, err := s.svcCtx.AdminModel.GetByInviteCode(inviteCode)
-			if err != nil && err != gorm.ErrRecordNotFound {
+			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 				return nil, err
 			}
 			if inviterAdmin != nil {
@@ -117,7 +118,7 @@ func (s *Service) RegisterUser(username, password, email, domainPrefix string, d
 	// 开始事务
 	tx := s.svcCtx.DB.Begin()
 	defer func() {
-		if r := recover(); r != nil {
+		if tx != nil {
 			tx.Rollback()
 		}
 	}()
@@ -135,14 +136,12 @@ func (s *Service) RegisterUser(username, password, email, domainPrefix string, d
 	}
 
 	if err := s.svcCtx.UserModel.Create(tx, newUser); err != nil {
-		tx.Rollback()
 		return nil, err
 	}
 
 	// 创建用户邮箱
 	domain, err := s.svcCtx.DomainModel.GetById(domainID)
 	if err != nil {
-		tx.Rollback()
 		return nil, fmt.Errorf("域名不存在")
 	}
 
@@ -160,7 +159,6 @@ func (s *Service) RegisterUser(username, password, email, domainPrefix string, d
 	}
 
 	if err := s.svcCtx.MailboxModel.Create(tx, newMailbox); err != nil {
-		tx.Rollback()
 		return nil, err
 	}
 
@@ -175,7 +173,6 @@ func (s *Service) RegisterUser(username, password, email, domainPrefix string, d
 				"updated_at":   time.Now(),
 			}
 			if err := s.svcCtx.UserModel.MapUpdate(tx, *invitedBy, updateData); err != nil {
-				tx.Rollback()
 				return nil, err
 			}
 		} else {
@@ -187,19 +184,18 @@ func (s *Service) RegisterUser(username, password, email, domainPrefix string, d
 					"updated_at":   time.Now(),
 				}
 				if err := s.svcCtx.AdminModel.MapUpdate(tx, *invitedBy, updateData); err != nil {
-					tx.Rollback()
 					return nil, err
 				}
 			}
 		}
 	}
+	// 清空密码字段，不返回敏感信息
+	newUser.Password = ""
 
 	if err := tx.Commit().Error; err != nil {
 		return nil, err
 	}
-
-	// 清空密码字段，不返回敏感信息
-	newUser.Password = ""
+	tx = nil
 	return newUser, nil
 }
 
