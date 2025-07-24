@@ -209,7 +209,7 @@ func (h *EmailHandler) SendEmail(c *gin.Context) {
 
 	// 只有在有成功发送的邮件时，才保存到发件人的已发送文件夹
 	for _, recipient := range successfulSends {
-		err := h.emailService.SaveEmailToSent(int(fromMailbox.Id), req.From, recipient, req.Subject, req.Content)
+		err := h.emailService.SaveEmailToSent(fromMailbox.Id, req.From, recipient, req.Subject, req.Content)
 		if err != nil {
 			// 保存到已发送失败，记录日志但不影响主要功能
 			continue
@@ -291,7 +291,7 @@ func (h *EmailHandler) GetEmails(c *gin.Context) {
 	}
 
 	// 获取邮件列表
-	emails, total, err := h.emailService.GetEmails(int(targetMailbox.Id), emailType, page, limit)
+	emails, total, err := h.emailService.GetEmails(targetMailbox.Id, emailType, page, limit)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "获取邮件失败"})
 		return
@@ -353,14 +353,14 @@ func (h *EmailHandler) GetEmailByID(c *gin.Context) {
 	}
 
 	// 获取邮件详情
-	email, err := h.emailService.GetEmailByID(emailID, int(targetMailbox.Id))
+	email, err := h.emailService.GetEmailByID(int64(emailID), targetMailbox.Id)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "邮件不存在"})
 		return
 	}
 
 	// 标记为已读
-	h.emailService.MarkAsRead(emailID, int(targetMailbox.Id))
+	h.emailService.MarkAsRead(int64(emailID), targetMailbox.Id)
 
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": email})
 }
@@ -399,12 +399,12 @@ func (h *EmailHandler) DeleteEmail(c *gin.Context) {
 	mailboxID := int(userMailboxes[0].Id)
 
 	// 验证邮件是否存在且属于用户的邮箱
-	_, err = h.emailService.GetEmailByID(emailID, mailboxID)
+	_, err = h.emailService.GetEmailByID(int64(emailID), int64(mailboxID))
 	if err != nil {
 		// 尝试其他邮箱
 		found := false
 		for _, mb := range userMailboxes {
-			_, err = h.emailService.GetEmailByID(emailID, int(mb.Id))
+			_, err = h.emailService.GetEmailByID(int64(emailID), mb.Id)
 			if err == nil {
 				mailboxID = int(mb.Id)
 				found = true
@@ -418,7 +418,7 @@ func (h *EmailHandler) DeleteEmail(c *gin.Context) {
 	}
 
 	// 删除邮件
-	err = h.emailService.DeleteEmail(emailID, mailboxID)
+	err = h.emailService.DeleteEmail(int64(emailID), int64(mailboxID))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "删除邮件失败"})
 		return
@@ -924,7 +924,7 @@ func (h *EmailHandler) GetVerificationCode(c *gin.Context) {
 		return
 	}
 
-	var emails []models.Email
+	var emails []*model.Email
 
 	// 如果指定了email_id，只查询特定邮件
 	if emailIDStr != "" {
@@ -938,7 +938,7 @@ func (h *EmailHandler) GetVerificationCode(c *gin.Context) {
 		}
 
 		// 获取特定邮件
-		email, getErr := h.emailService.GetEmailByID(emailID, int(mailboxInfo.Id))
+		email, getErr := h.emailService.GetEmailByID(int64(emailID), mailboxInfo.Id)
 		if getErr != nil {
 			c.JSON(http.StatusNotFound, gin.H{
 				"success": false,
@@ -946,11 +946,11 @@ func (h *EmailHandler) GetVerificationCode(c *gin.Context) {
 			})
 			return
 		}
-		emails = []models.Email{*email}
+		emails = []*model.Email{email}
 	} else {
 		// 获取邮件列表
 		var getErr error
-		emails, _, getErr = h.emailService.GetEmails(int(mailboxInfo.Id), "inbox", 1, limit)
+		emails, _, getErr = h.emailService.GetEmails(mailboxInfo.Id, "inbox", 1, limit)
 		if getErr != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"success": false,

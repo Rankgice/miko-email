@@ -41,7 +41,7 @@ func New(db *sql.DB, cfg *config.Config, svcCtx *svc.ServiceContext) *Server {
 	}
 
 	// 创建邮件服务
-	emailService := email.NewService(db)
+	emailService := email.NewService(svcCtx)
 
 	// 创建转发服务
 	forwardService := forward.NewService(svcCtx)

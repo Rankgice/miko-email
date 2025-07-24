@@ -313,3 +313,69 @@ func (m *EmailModel) BatchMoveToFolder(tx *gorm.DB, ids []int64, folder string) 
 		"updated_at": time.Now(),
 	}).Error
 }
+
+// GetEmailsByUserEmail 根据用户邮箱地址获取邮件（用于IMAP/POP3）
+func (m *EmailModel) GetEmailsByUserEmail(userEmail, folder string, limit int) ([]*Email, error) {
+	var emails []*Email
+	query := m.db.Table("email e").
+		Select("e.*").
+		Joins("JOIN mailbox m ON e.mailbox_id = m.id").
+		Where("m.email = ? AND e.folder = ?", userEmail, folder).
+		Order("e.created_at DESC")
+
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+
+	err := query.Find(&emails).Error
+	return emails, err
+}
+
+// SaveEmailToFolder 保存邮件到指定文件夹
+func (m *EmailModel) SaveEmailToFolder(tx *gorm.DB, mailboxId int64, fromAddr, toAddr, subject, body, folder string) error {
+	db := m.db
+	if tx != nil {
+		db = tx
+	}
+
+	email := &Email{
+		MailboxId: mailboxId,
+		FromAddr:  fromAddr,
+		ToAddr:    toAddr,
+		Subject:   subject,
+		Body:      body,
+		Folder:    folder,
+		IsRead:    false,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+
+	return db.Create(email).Error
+}
+
+// GetEmailsForPOP3 获取POP3格式的邮件列表
+func (m *EmailModel) GetEmailsForPOP3(mailboxId int64) ([]*Email, error) {
+	var emails []*Email
+	err := m.db.Where("mailbox_id = ? AND folder = ?", mailboxId, "inbox").
+		Order("created_at ASC").Find(&emails).Error
+	return emails, err
+}
+
+// DeleteEmailById 根据ID删除邮件（用于POP3）
+func (m *EmailModel) DeleteEmailById(tx *gorm.DB, id int64) error {
+	db := m.db
+	if tx != nil {
+		db = tx
+	}
+	return db.Where("id = ?", id).Delete(&Email{}).Error
+}
+
+// CountEmailsByUserEmail 统计用户邮箱的邮件数量
+func (m *EmailModel) CountEmailsByUserEmail(userEmail, folder string) (int64, error) {
+	var count int64
+	err := m.db.Table("email e").
+		Joins("JOIN mailbox m ON e.mailbox_id = m.id").
+		Where("m.email = ? AND e.folder = ?", userEmail, folder).
+		Count(&count).Error
+	return count, err
+}

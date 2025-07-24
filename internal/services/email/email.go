@@ -3,8 +3,8 @@ package email
 import (
 	"bufio"
 	"bytes"
-	"database/sql"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -28,9 +28,11 @@ import (
 	"golang.org/x/text/transform"
 	"miko-email/internal/services/forward"
 	"miko-email/internal/services/smtp"
+	"miko-email/internal/svc"
 
 	"github.com/jhillyerd/enmime/v2"
-	"miko-email/internal/models"
+	"gorm.io/gorm"
+	"miko-email/internal/model"
 )
 
 // ConnectionTracker 连接跟踪器
@@ -86,18 +88,22 @@ func (ct *ConnectionTracker) IsAllowed(ip string) bool {
 }
 
 type Service struct {
-	db             *sql.DB
+	svcCtx         *svc.ServiceContext
 	tracker        *ConnectionTracker
 	forwardService *forward.Service
 	smtpClient     *smtp.OutboundClient
 }
 
-func NewService(db *sql.DB) *Service {
+func NewService(svcCtx *svc.ServiceContext) *Service {
+	db, err := svcCtx.DB.DB()
+	if err != nil {
+		return nil
+	}
 	return &Service{
-		db:             db,
+		svcCtx:         svcCtx,
 		tracker:        NewConnectionTracker(),
-		forwardService: forward.NewService(db),
-		smtpClient:     smtp.NewOutboundClientWithDB(db), // 使用数据库动态获取域名
+		forwardService: forward.NewService(svcCtx),
+		smtpClient:     smtp.NewOutboundClientWithDB(db), // 暂时使用固定域名
 	}
 }
 
@@ -218,22 +224,21 @@ func (s *Service) writeResponse(writer *bufio.Writer, code int, message string) 
 // authenticateUser 验证用户
 func (s *Service) authenticateUser(username, password string) bool {
 	// 首先尝试邮箱认证（mailboxes表）
-	var storedPassword string
-	err := s.db.QueryRow("SELECT password FROM mailboxes WHERE email = ? AND is_active = 1", username).Scan(&storedPassword)
-	if err == nil {
-		// 邮箱认证：直接比较密码（假设邮箱密码是明文存储的）
-		return storedPassword == password
+	mailbox, err := s.svcCtx.MailboxModel.GetByEmailAndPassword(username, password)
+	if err == nil && mailbox != nil {
+		// 邮箱认证成功
+		return true
 	}
 
 	// 如果邮箱认证失败，尝试用户认证（users表）
-	err = s.db.QueryRow("SELECT password FROM users WHERE email = ?", username).Scan(&storedPassword)
+	user, err := s.svcCtx.UserModel.GetByEmail(username)
 	if err != nil {
 		log.Printf("用户认证失败: %v", err)
 		return false
 	}
 
 	// 用户认证：使用bcrypt验证密码
-	err = bcrypt.CompareHashAndPassword([]byte(storedPassword), []byte(password))
+	err = bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password))
 	return err == nil
 }
 
@@ -530,44 +535,46 @@ func (session *IMAPSession) authenticateIMAPUser(username, password string) bool
 
 // authenticateByMailbox 通过邮箱认证
 func (session *IMAPSession) authenticateByMailbox(email, password string) bool {
-	var storedPassword string
-	var mailboxID int
-	err := session.server.db.QueryRow("SELECT id, password FROM mailboxes WHERE email = ? AND is_active = 1", email).Scan(&mailboxID, &storedPassword)
+	mailbox, err := session.server.svcCtx.MailboxModel.GetByEmailAndPassword(email, password)
 	if err != nil {
 		return false
 	}
 
-	return storedPassword == password
+	return mailbox != nil
 }
 
 // verifyUserMailboxAccess 验证网站用户是否有权限访问指定邮箱
 func (session *IMAPSession) verifyUserMailboxAccess(websiteUser, email string) bool {
-	var count int
-	err := session.server.db.QueryRow(`
-		SELECT COUNT(*) FROM mailboxes m
-		JOIN users u ON m.user_id = u.id
-		WHERE m.email = ? AND u.username = ? AND m.is_active = 1
-	`, email, websiteUser).Scan(&count)
-
+	// 先获取用户
+	user, err := session.server.svcCtx.UserModel.GetByUsername(websiteUser)
 	if err != nil {
+		log.Printf("获取用户失败: %v", err)
+		return false
+	}
+
+	// 检查用户是否拥有该邮箱
+	mailbox, err := session.server.svcCtx.MailboxModel.GetByEmailAndUserId(email, user.Id)
+	if err != nil {
+		log.Printf("验证用户邮箱权限失败: %v", err)
+		return false
+	} else if !mailbox.IsActive {
 		log.Printf("验证用户邮箱权限失败: %v", err)
 		return false
 	}
 
-	log.Printf("用户权限验证: 网站用户=%s, 邮箱=%s, 匹配数量=%d", websiteUser, email, count)
-	return count > 0
+	log.Printf("用户权限验证: 网站用户=%s, 邮箱=%s, 验证成功", websiteUser, email)
+	return true
 }
 
 // authenticateByWebsiteUser 通过网站用户认证
 func (session *IMAPSession) authenticateByWebsiteUser(username, password string) bool {
-	var storedPassword string
-	err := session.server.db.QueryRow("SELECT password FROM users WHERE email = ?", username).Scan(&storedPassword)
+	user, err := session.server.svcCtx.UserModel.GetByEmail(username)
 	if err != nil {
 		return false
 	}
 
 	// 使用bcrypt验证密码
-	err = bcrypt.CompareHashAndPassword([]byte(storedPassword), []byte(password))
+	err = bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password))
 	return err == nil
 }
 
@@ -601,12 +608,7 @@ func (session *IMAPSession) handleSelect(args []string) {
 	}
 
 	// 获取邮件数量 - 查询收件箱邮件
-	var count int
-	err := session.server.db.QueryRow(`
-		SELECT COUNT(*) FROM emails e
-		JOIN mailboxes m ON e.mailbox_id = m.id
-		WHERE m.email = ? AND e.folder = 'inbox'
-	`, session.user).Scan(&count)
+	count, err := session.server.svcCtx.EmailModel.CountEmailsByUserEmail(session.user, "inbox")
 	if err != nil {
 		log.Printf("查询邮件数量失败: %v", err)
 		count = 0
@@ -636,26 +638,16 @@ func (session *IMAPSession) handleSearch(args []string) {
 	}
 
 	// 查询用户的所有邮件ID
-	rows, err := session.server.db.Query(`
-		SELECT e.id FROM emails e
-		JOIN mailboxes m ON e.mailbox_id = m.id
-		WHERE m.email = ? AND e.folder = 'inbox'
-		ORDER BY e.created_at DESC
-	`, session.user)
+	emails, err := session.server.svcCtx.EmailModel.GetEmailsByUserEmail(session.user, "inbox", 0)
 	if err != nil {
 		log.Printf("SEARCH查询失败: %v", err)
 		session.writeTaggedResponse("NO SEARCH failed")
 		return
 	}
-	defer rows.Close()
 
 	var emailIDs []string
-	for rows.Next() {
-		var id int
-		if err := rows.Scan(&id); err != nil {
-			continue
-		}
-		emailIDs = append(emailIDs, fmt.Sprintf("%d", id))
+	for _, email := range emails {
+		emailIDs = append(emailIDs, fmt.Sprintf("%d", email.Id))
 	}
 
 	// 返回搜索结果
@@ -683,32 +675,20 @@ func (session *IMAPSession) handleFetch(args []string) {
 	dataItems := strings.Join(args[1:], " ")
 
 	// 查询邮件数据
-	rows, err := session.server.db.Query(`
-		SELECT e.id, e.from_addr, e.to_addr, e.subject, e.body, e.created_at
-		FROM emails e
-		JOIN mailboxes m ON e.mailbox_id = m.id
-		WHERE m.email = ? AND e.folder = 'inbox'
-		ORDER BY e.created_at DESC LIMIT 10
-	`, session.user)
+	emails, err := session.server.svcCtx.EmailModel.GetEmailsByUserEmail(session.user, "inbox", 10)
 	if err != nil {
 		session.writeTaggedResponse("NO FETCH failed")
 		return
 	}
-	defer rows.Close()
 
 	seqNum := 1
-	for rows.Next() {
-		var id int
-		var sender, recipient, subject, body, createdAt string
-		if err := rows.Scan(&id, &sender, &recipient, &subject, &body, &createdAt); err != nil {
-			continue
-		}
+	for _, email := range emails {
 
 		// 根据请求的数据项返回不同的信息
 		if strings.Contains(dataItems, "RFC822") {
 			// 构造完整的邮件内容
 			emailContent := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nDate: %s\r\n\r\n%s",
-				sender, recipient, subject, createdAt, body)
+				email.FromAddr, email.ToAddr, email.Subject, email.CreatedAt.Format("2006-01-02 15:04:05"), email.Body)
 
 			// 返回RFC822格式的邮件
 			session.writeResponse(fmt.Sprintf("* %d FETCH (RFC822 {%d}", seqNum, len(emailContent)))
@@ -718,7 +698,7 @@ func (session *IMAPSession) handleFetch(args []string) {
 		} else {
 			// 返回基本信息
 			session.writeResponse(fmt.Sprintf("* %d FETCH (UID %d RFC822.SIZE %d ENVELOPE (\"%s\" \"%s\" ((\"%s\" NIL \"%s\" NIL)) NIL NIL NIL NIL NIL))",
-				seqNum, id, len(body), createdAt, subject, sender, sender))
+				seqNum, email.Id, len(email.Body), email.CreatedAt.Format("2006-01-02 15:04:05"), email.Subject, email.FromAddr, email.FromAddr))
 		}
 		seqNum++
 	}
@@ -960,23 +940,14 @@ func (session *POP3Session) handlePass(args []string) {
 	password := args[0]
 
 	// 验证用户凭据 - 从mailboxes表查询
-	var storedPassword string
-	var mailboxID int
-	err := session.server.db.QueryRow("SELECT id, password FROM mailboxes WHERE email = ?", session.user).Scan(&mailboxID, &storedPassword)
+	mailbox, err := session.server.svcCtx.MailboxModel.GetByEmailAndPassword(session.user, password)
 	if err != nil {
-		log.Printf("POP3登录失败 - 邮箱不存在: %s, 错误: %v", session.user, err)
+		log.Printf("POP3登录失败 - 邮箱不存在或密码错误: %s, 错误: %v", session.user, err)
 		session.writeResponse("-ERR Authentication failed")
 		return
 	}
 
-	// 验证密码
-	if storedPassword != password {
-		log.Printf("POP3登录失败 - 密码错误: %s", session.user)
-		session.writeResponse("-ERR Authentication failed")
-		return
-	}
-
-	session.mailboxID = mailboxID
+	session.mailboxID = int(mailbox.Id)
 	session.state = "TRANSACTION"
 
 	// 加载邮件列表
@@ -993,29 +964,23 @@ func (session *POP3Session) handlePass(args []string) {
 
 // loadEmails 加载邮件列表
 func (session *POP3Session) loadEmails() error {
-	rows, err := session.server.db.Query(`
-		SELECT id, from_addr, to_addr, subject, body, created_at
-		FROM emails
-		WHERE mailbox_id = ? AND folder = 'inbox'
-		ORDER BY created_at ASC
-	`, session.mailboxID)
+	emails, err := session.server.svcCtx.EmailModel.GetEmailsForPOP3(int64(session.mailboxID))
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
 
 	session.emails = []POP3Email{}
-	for rows.Next() {
-		var email POP3Email
-		var createdAt string
-		err := rows.Scan(&email.ID, &email.From, &email.To, &email.Subject, &email.Body, &createdAt)
-		if err != nil {
-			continue
+	for _, email := range emails {
+		pop3Email := POP3Email{
+			ID:      int(email.Id),
+			From:    email.FromAddr,
+			To:      email.ToAddr,
+			Subject: email.Subject,
+			Body:    email.Body,
+			Date:    email.CreatedAt.Format("2006-01-02 15:04:05"),
+			Size:    len(email.Body) + len(email.Subject) + len(email.FromAddr) + len(email.ToAddr) + 100, // 估算大小
 		}
-
-		email.Date = createdAt
-		email.Size = len(email.Body) + len(email.Subject) + len(email.From) + len(email.To) + 100 // 估算大小
-		session.emails = append(session.emails, email)
+		session.emails = append(session.emails, pop3Email)
 	}
 
 	return nil
@@ -1231,7 +1196,7 @@ func (session *POP3Session) handleQuit() {
 		for msgNum := range session.deleted {
 			if msgNum > 0 && msgNum <= len(session.emails) {
 				email := session.emails[msgNum-1]
-				_, err := session.server.db.Exec("DELETE FROM emails WHERE id = ?", email.ID)
+				err := session.server.svcCtx.EmailModel.DeleteEmailById(nil, int64(email.ID))
 				if err != nil {
 					log.Printf("删除邮件失败: %v", err)
 				} else {
@@ -1361,13 +1326,12 @@ func (session *SMTPSession) reset() {
 
 // isLocalUser 检查是否为本地用户
 func (session *SMTPSession) isLocalUser(email string) bool {
-	var count int
-	err := session.server.db.QueryRow("SELECT COUNT(*) FROM mailboxes WHERE email = ? AND is_active = 1", email).Scan(&count)
+	exists, err := session.server.svcCtx.MailboxModel.CheckEmailExists(email)
 	if err != nil {
 		log.Printf("查询邮箱失败: %v", err)
 		return false
 	}
-	return count > 0
+	return exists
 }
 
 // canSendFrom 检查是否有权限从指定地址发送邮件
@@ -1420,19 +1384,22 @@ func (session *SMTPSession) isAuthorizedSender(from string) bool {
 	}
 
 	// 检查用户是否拥有该邮箱（通过users表关联）
-	var count int
-	err := session.server.db.QueryRow(`
-		SELECT COUNT(*) FROM mailboxes m
-		JOIN users u ON m.user_id = u.id
-		WHERE m.email = ? AND u.email = ? AND m.is_active = 1
-	`, from, session.username).Scan(&count)
-
+	user, err := session.server.svcCtx.UserModel.GetByEmail(session.username)
 	if err != nil {
+		log.Printf("获取用户失败: %v", err)
+		return false
+	}
+
+	mailbox, err := session.server.svcCtx.MailboxModel.GetByEmailAndUserId(from, user.Id)
+	if err != nil {
+		log.Printf("检查发件人权限失败: %v", err)
+		return false
+	} else if !mailbox.IsActive {
 		log.Printf("检查发件人权限失败: %v", err)
 		return false
 	}
 
-	return count > 0
+	return true
 }
 
 // isValidExternalEmail 检查是否为有效的外部邮箱
@@ -1484,13 +1451,8 @@ func (s *Service) sendToExternalEmail(from, to, subject, body string) error {
 }
 
 // SaveEmail 保存邮件到数据库
-func (s *Service) SaveEmail(mailboxID int, fromAddr, toAddr, subject, body string) error {
-	_, err := s.db.Exec(`
-		INSERT INTO emails (mailbox_id, from_addr, to_addr, subject, body, folder, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, 'inbox', ?, ?)
-	`, mailboxID, fromAddr, toAddr, subject, body, time.Now(), time.Now())
-
-	return err
+func (s *Service) SaveEmail(mailboxID int64, fromAddr, toAddr, subject, body string) error {
+	return s.svcCtx.EmailModel.SaveEmailToFolder(nil, mailboxID, fromAddr, toAddr, subject, body, "inbox")
 }
 
 // saveEmail 保存邮件到数据库
@@ -1505,8 +1467,7 @@ func (session *SMTPSession) saveEmail() error {
 	for _, to := range session.to {
 		if session.isLocalUser(to) {
 			// 本地用户，保存到数据库
-			var mailboxID int
-			err := session.server.db.QueryRow("SELECT id FROM mailboxes WHERE email = ? AND is_active = 1", to).Scan(&mailboxID)
+			mailboxID, err := session.server.svcCtx.MailboxModel.GetIdByEmail(to)
 			if err != nil {
 				log.Printf("获取邮箱ID失败: %v", err)
 				continue
@@ -1514,11 +1475,7 @@ func (session *SMTPSession) saveEmail() error {
 
 			// 插入邮件记录
 			log.Printf("准备插入数据库 - Body: %s", body)
-			_, err = session.server.db.Exec(`
-				INSERT INTO emails (mailbox_id, from_addr, to_addr, subject, body, folder, created_at, updated_at)
-				VALUES (?, ?, ?, ?, ?, 'inbox', ?, ?)
-			`, mailboxID, session.from, to, subject, body, time.Now(), time.Now())
-
+			err = session.server.svcCtx.EmailModel.SaveEmailToFolder(nil, mailboxID, session.from, to, subject, body, "inbox")
 			if err != nil {
 				log.Printf("插入邮件记录失败: %v", err)
 				return err
@@ -1545,19 +1502,14 @@ func (session *SMTPSession) saveEmail() error {
 
 // saveToLocalDatabase 直接保存到本地数据库（备用方法）
 func (session *SMTPSession) saveToLocalDatabase(to, subject, body string) {
-	var mailboxID int
-	err := session.server.db.QueryRow("SELECT id FROM mailboxes WHERE email = ? AND is_active = 1", to).Scan(&mailboxID)
+	mailboxID, err := session.server.svcCtx.MailboxModel.GetIdByEmail(to)
 	if err != nil {
 		log.Printf("获取邮箱ID失败: %v", err)
 		return
 	}
 
 	// 插入邮件记录
-	_, err = session.server.db.Exec(`
-		INSERT INTO emails (mailbox_id, from_addr, to_addr, subject, body, folder, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, 'inbox', ?, ?)
-	`, mailboxID, session.from, to, subject, body, time.Now(), time.Now())
-
+	err = session.server.svcCtx.EmailModel.SaveEmailToFolder(nil, mailboxID, session.from, to, subject, body, "inbox")
 	if err != nil {
 		log.Printf("备用保存失败: %v", err)
 		return
@@ -1570,13 +1522,8 @@ func (session *SMTPSession) saveToLocalDatabase(to, subject, body string) {
 }
 
 // SaveEmailToSent 保存邮件到已发送文件夹
-func (s *Service) SaveEmailToSent(mailboxID int, fromAddr, toAddr, subject, body string) error {
-	_, err := s.db.Exec(`
-		INSERT INTO emails (mailbox_id, from_addr, to_addr, subject, body, folder, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, 'sent', ?, ?)
-	`, mailboxID, fromAddr, toAddr, subject, body, time.Now(), time.Now())
-
-	return err
+func (s *Service) SaveEmailToSent(mailboxID int64, fromAddr, toAddr, subject, body string) error {
+	return s.svcCtx.EmailModel.SaveEmailToFolder(nil, mailboxID, fromAddr, toAddr, subject, body, "sent")
 }
 
 // parseEmailContent 解析邮件内容
@@ -1709,14 +1656,13 @@ func (s *Service) processForwardRules(sourceEmail, fromAddr, subject, body strin
 // sendForwardEmail 发送转发邮件
 func (s *Service) sendForwardEmail(fromAddr, toAddr, subject, body string) error {
 	// 检查目标邮箱是否是本域邮箱
-	var mailboxID int
-	err := s.db.QueryRow("SELECT id FROM mailboxes WHERE email = ? AND is_active = 1", toAddr).Scan(&mailboxID)
+	mailboxID, err := s.svcCtx.MailboxModel.GetIdByEmail(toAddr)
 
 	if err == nil {
 		// 目标是本域邮箱，直接保存到收件箱
 		log.Printf("转发到本域邮箱: %s", toAddr)
 		return s.SaveEmail(mailboxID, fromAddr, toAddr, subject, body)
-	} else if err == sql.ErrNoRows {
+	} else if errors.Is(err, gorm.ErrRecordNotFound) {
 		// 目标是外部邮箱，通过SMTP发送
 		log.Printf("转发到外部邮箱: %s", toAddr)
 
@@ -1960,82 +1906,61 @@ func isBase64Content(content string) bool {
 }
 
 // GetEmails 获取邮件列表
-func (s *Service) GetEmails(mailboxID int, folder string, page, limit int) ([]models.Email, int, error) {
-	offset := (page - 1) * limit
-
-	// 获取总数
-	var total int
-	err := s.db.QueryRow(`
-		SELECT COUNT(*) FROM emails 
-		WHERE mailbox_id = ? AND folder = ?
-	`, mailboxID, folder).Scan(&total)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	// 获取邮件列表
-	query := `
-		SELECT id, mailbox_id, from_addr, to_addr, subject, body, is_read, folder, created_at, updated_at
-		FROM emails 
-		WHERE mailbox_id = ? AND folder = ?
-		ORDER BY created_at DESC
-		LIMIT ? OFFSET ?
-	`
-
-	rows, err := s.db.Query(query, mailboxID, folder, limit, offset)
-	if err != nil {
-		return nil, 0, err
-	}
-	defer rows.Close()
-
-	var emails []models.Email
-	for rows.Next() {
-		var email models.Email
-		err = rows.Scan(&email.ID, &email.MailboxID, &email.FromAddr, &email.ToAddr,
-			&email.Subject, &email.Body, &email.IsRead, &email.Folder,
-			&email.CreatedAt, &email.UpdatedAt)
-		if err != nil {
-			return nil, 0, err
-		}
-		emails = append(emails, email)
-	}
-
-	return emails, total, nil
+func (s *Service) GetEmails(mailboxID int64, folder string, page, limit int) ([]*model.Email, int64, error) {
+	return s.svcCtx.EmailModel.GetEmailsByMailboxId(mailboxID, folder, page, limit)
 }
 
 // GetEmailByID 根据ID获取邮件
-func (s *Service) GetEmailByID(emailID, mailboxID int) (*models.Email, error) {
-	var email models.Email
-	query := `
-		SELECT id, mailbox_id, from_addr, to_addr, subject, body, is_read, folder, created_at, updated_at
-		FROM emails 
-		WHERE id = ? AND mailbox_id = ?
-	`
-
-	err := s.db.QueryRow(query, emailID, mailboxID).Scan(
-		&email.ID, &email.MailboxID, &email.FromAddr, &email.ToAddr,
-		&email.Subject, &email.Body, &email.IsRead, &email.Folder,
-		&email.CreatedAt, &email.UpdatedAt)
-
+func (s *Service) GetEmailByID(emailID, mailboxID int64) (*model.Email, error) {
+	email, err := s.svcCtx.EmailModel.GetByIdAndMailboxId(emailID, mailboxID)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, fmt.Errorf("邮件不存在")
 		}
 		return nil, err
 	}
 
-	return &email, nil
+	return email, nil
 }
 
 // MarkAsRead 标记邮件为已读
-func (s *Service) MarkAsRead(emailID, mailboxID int) error {
-	_, err := s.db.Exec(`
-		UPDATE emails 
-		SET is_read = 1, updated_at = ?
-		WHERE id = ? AND mailbox_id = ?
-	`, time.Now(), emailID, mailboxID)
+func (s *Service) MarkAsRead(emailID, mailboxID int64) error {
+	return s.svcCtx.EmailModel.MapUpdate(nil, emailID, map[string]interface{}{
+		"is_read":    true,
+		"updated_at": time.Now(),
+	})
+}
 
-	return err
+// DeleteEmail 删除邮件
+func (s *Service) DeleteEmail(emailID, mailboxID int64) error {
+	// 先验证邮件是否存在且属于指定邮箱
+	email, err := s.svcCtx.EmailModel.GetByIdAndMailboxId(emailID, mailboxID)
+	if err != nil {
+		return err
+	}
+
+	// 删除邮件
+	return s.svcCtx.EmailModel.Delete(nil, email)
+}
+
+// SendTestForwardEmail 发送测试转发邮件
+func (s *Service) SendTestForwardEmail(sourceEmail, targetEmail, subject, content string, rule interface{}) error {
+	// 获取源邮箱ID
+	mailboxID, err := s.svcCtx.MailboxModel.GetIdByEmail(sourceEmail)
+	if err != nil {
+		return fmt.Errorf("获取源邮箱失败: %w", err)
+	}
+
+	// 保存测试邮件到源邮箱
+	err = s.svcCtx.EmailModel.SaveEmailToFolder(nil, mailboxID, "system@test.com", sourceEmail, subject, content, "inbox")
+	if err != nil {
+		return fmt.Errorf("保存测试邮件失败: %w", err)
+	}
+
+	// 触发转发规则处理
+	s.processForwardRules(sourceEmail, "system@test.com", subject, content)
+
+	return nil
 }
 
 // parseEmailWithEnmime 使用enmime库解析邮件内容
@@ -2106,57 +2031,4 @@ func stripHTMLTags(html string) string {
 	text = strings.ReplaceAll(text, "&#39;", "'")
 
 	return text
-}
-
-// DeleteEmail 删除邮件
-func (s *Service) DeleteEmail(emailID, mailboxID int) error {
-	_, err := s.db.Exec(`
-		DELETE FROM emails 
-		WHERE id = ? AND mailbox_id = ?
-	`, emailID, mailboxID)
-
-	return err
-}
-
-// SendTestForwardEmail 发送测试转发邮件
-func (s *Service) SendTestForwardEmail(sourceEmail, targetEmail, subject, content string, rule *forward.ForwardRule) error {
-	log.Printf("🧪 开始发送测试转发邮件: %s -> %s", sourceEmail, targetEmail)
-
-	// 构建转发邮件的主题
-	forwardSubject := subject
-	if rule.SubjectPrefix != "" {
-		forwardSubject = rule.SubjectPrefix + " " + subject
-	}
-
-	// 构建转发邮件的内容
-	forwardBody := fmt.Sprintf(`
--------- 测试转发邮件 --------
-这是一封测试转发功能的邮件。
-
-原始主题: %s
-转发规则: %s -> %s
-测试时间: %s
-
-原始内容:
-%s
-
--------- 转发信息结束 --------
-`, subject, sourceEmail, targetEmail, time.Now().Format("2006-01-02 15:04:05"), content)
-
-	// 发送转发邮件
-	err := s.sendForwardEmail(sourceEmail, targetEmail, forwardSubject, forwardBody)
-	if err != nil {
-		log.Printf("❌ 测试转发邮件发送失败: %v", err)
-		return fmt.Errorf("测试转发邮件发送失败: %w", err)
-	}
-
-	// 更新转发次数（测试也算一次转发）
-	err = s.forwardService.IncrementForwardCount(rule.ID)
-	if err != nil {
-		log.Printf("⚠️ 更新转发次数失败: %v", err)
-		// 不返回错误，因为邮件已经发送成功
-	}
-
-	log.Printf("✅ 测试转发邮件发送成功: %s -> %s", sourceEmail, targetEmail)
-	return nil
 }

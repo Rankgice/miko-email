@@ -285,3 +285,31 @@ func (m *MailboxModel) GetByEmailAndUserId(email string, userId int64) (*Mailbox
 	}
 	return &mailbox, nil
 }
+
+// GetByEmailAndPassword 根据邮箱和密码验证（用于认证）
+func (m *MailboxModel) GetByEmailAndPassword(email, password string) (*Mailbox, error) {
+	var mailbox Mailbox
+	if err := m.db.Where("email = ? AND password = ? AND is_active = ?", email, password, true).First(&mailbox).Error; err != nil {
+		return nil, err
+	}
+	return &mailbox, nil
+}
+
+// GetIdByEmail 根据邮箱地址获取邮箱ID
+func (m *MailboxModel) GetIdByEmail(email string) (int64, error) {
+	var mailbox Mailbox
+	if err := m.db.Select("id").Where("email = ? AND is_active = ?", email, true).First(&mailbox).Error; err != nil {
+		return 0, err
+	}
+	return mailbox.Id, nil
+}
+
+// CheckEmailExists 检查邮箱是否存在且激活
+func (m *MailboxModel) CheckEmailExists(email string) (bool, error) {
+	var count int64
+	err := m.db.Model(&Mailbox{}).Where("email = ? AND is_active = ?", email, true).Count(&count).Error
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
