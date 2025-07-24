@@ -5,7 +5,6 @@ import (
 	"miko-email/internal/svc"
 	"net/http"
 
-	"miko-email/internal/models"
 	"miko-email/internal/services/auth"
 
 	"github.com/gin-gonic/gin"
@@ -38,7 +37,7 @@ type RegisterRequest struct {
 	Password     string `json:"password" binding:"required"`
 	Email        string `json:"email" binding:"required,email"`
 	DomainPrefix string `json:"domain_prefix" binding:"required"`
-	DomainID     int    `json:"domain_id" binding:"required"`
+	DomainID     int64  `json:"domain_id" binding:"required"`
 	InviteCode   string `json:"invite_code"`
 }
 
@@ -68,7 +67,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	session.Values["user_id"] = user.ID
+	session.Values["user_id"] = user.Id
 	session.Values["username"] = user.Username
 	session.Values["is_admin"] = false
 
@@ -82,7 +81,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		"message": "登录成功",
 		"data": gin.H{
 			"user": gin.H{
-				"id":           user.ID,
+				"id":           user.Id,
 				"username":     user.Username,
 				"email":        user.Email,
 				"contribution": user.Contribution,
@@ -113,7 +112,7 @@ func (h *AuthHandler) AdminLogin(c *gin.Context) {
 		return
 	}
 
-	session.Values["user_id"] = admin.ID
+	session.Values["user_id"] = admin.Id
 	session.Values["username"] = admin.Username
 	session.Values["is_admin"] = true
 
@@ -127,7 +126,7 @@ func (h *AuthHandler) AdminLogin(c *gin.Context) {
 		"message": "登录成功",
 		"data": gin.H{
 			"user": gin.H{
-				"id":           admin.ID,
+				"id":           admin.Id,
 				"username":     admin.Username,
 				"email":        admin.Email,
 				"contribution": admin.Contribution,
@@ -156,7 +155,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		"message": "注册成功",
 		"data": gin.H{
 			"user": gin.H{
-				"id":           user.ID,
+				"id":           user.Id,
 				"username":     user.Username,
 				"email":        user.Email,
 				"contribution": user.Contribution,
@@ -193,28 +192,16 @@ func (h *AuthHandler) GetProfile(c *gin.Context) {
 
 	if isAdmin {
 		// 管理员用户
-		var admin models.Admin
-		query := `
-			SELECT id, username, email, contribution, invite_code, created_at, updated_at
-			FROM admins
-			WHERE id = ?
-		`
-
-		err := h.db.QueryRow(query, userID).Scan(
-			&admin.ID, &admin.Username, &admin.Email,
-			&admin.Contribution, &admin.InviteCode,
-			&admin.CreatedAt, &admin.UpdatedAt,
-		)
-
+		admin, err := h.svcCtx.AdminModel.GetById(int64(userID))
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "获取用户信息失败"})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "获取管理员信息失败"})
 			return
 		}
 
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
 			"data": gin.H{
-				"id":           admin.ID,
+				"id":           admin.Id,
 				"username":     admin.Username,
 				"email":        admin.Email,
 				"contribution": admin.Contribution,
@@ -225,19 +212,7 @@ func (h *AuthHandler) GetProfile(c *gin.Context) {
 		})
 	} else {
 		// 普通用户
-		var user models.User
-		query := `
-			SELECT id, username, email, contribution, invite_code, invited_by, created_at, updated_at
-			FROM users
-			WHERE id = ?
-		`
-
-		err := h.db.QueryRow(query, userID).Scan(
-			&user.ID, &user.Username, &user.Email,
-			&user.Contribution, &user.InviteCode, &user.InvitedBy,
-			&user.CreatedAt, &user.UpdatedAt,
-		)
-
+		user, err := h.svcCtx.UserModel.GetById(int64(userID))
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "获取用户信息失败"})
 			return
@@ -246,7 +221,7 @@ func (h *AuthHandler) GetProfile(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
 			"data": gin.H{
-				"id":           user.ID,
+				"id":           user.Id,
 				"username":     user.Username,
 				"email":        user.Email,
 				"contribution": user.Contribution,
@@ -267,7 +242,7 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 		return
 	}
 
-	userID := c.GetInt("user_id")
+	userID := int64(c.GetInt("user_id"))
 	isAdmin := c.GetBool("is_admin")
 
 	err := h.authService.ChangePassword(userID, req.OldPassword, req.NewPassword, isAdmin)
