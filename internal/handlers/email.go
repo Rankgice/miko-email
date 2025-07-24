@@ -17,7 +17,6 @@ import (
 
 	"miko-email/internal/config"
 	"miko-email/internal/model"
-	"miko-email/internal/models"
 	"miko-email/internal/services/email"
 	"miko-email/internal/services/forward"
 	"miko-email/internal/services/mailbox"
@@ -663,7 +662,7 @@ func (h *EmailHandler) TestForwardRule(c *gin.Context) {
 	userID := c.GetInt("user_id")
 
 	// 获取转发规则详情
-	rule, err := h.forwardService.GetForwardRuleByID(id, userID)
+	rule, err := h.forwardService.GetForwardRuleByID(int64(id), int64(userID))
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{
 			"success": false,
@@ -979,7 +978,7 @@ func (h *EmailHandler) GetVerificationCode(c *gin.Context) {
 		codes := extractVerificationCodes(email.Body)
 		if len(codes) > 0 {
 			results = append(results, map[string]interface{}{
-				"email_id":   email.ID,
+				"email_id":   email.Id,
 				"from":       email.FromAddr,
 				"subject":    email.Subject,
 				"created_at": email.CreatedAt,

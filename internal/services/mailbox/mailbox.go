@@ -417,8 +417,11 @@ func (s *Service) GetAllMailboxes() ([]AdminMailboxResponse, error) {
 		LEFT JOIN admins a ON m.admin_id = a.id
 		ORDER BY m.created_at DESC
 	`
-
-	rows, err := s.db.Query(query)
+	db, err := s.svcCtx.DB.DB()
+	if err != nil {
+		return nil, err
+	}
+	rows, err := db.Query(query)
 	if err != nil {
 		return nil, err
 	}

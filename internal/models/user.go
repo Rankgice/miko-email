@@ -6,21 +6,21 @@ import (
 
 // User 普通用户模型
 type User struct {
-	ID           int       `json:"id" db:"id"`
+	ID           int64     `json:"id" db:"id"`
 	Username     string    `json:"username" db:"username"`
 	Password     string    `json:"-" db:"password"` // 不在JSON中显示密码
 	Email        string    `json:"email" db:"email"`
 	IsActive     bool      `json:"is_active" db:"is_active"`
 	Contribution int       `json:"contribution" db:"contribution"` // 贡献度
 	InviteCode   string    `json:"invite_code" db:"invite_code"`   // 邀请码
-	InvitedBy    *int      `json:"invited_by" db:"invited_by"`     // 被谁邀请
+	InvitedBy    *int64    `json:"invited_by" db:"invited_by"`     // 被谁邀请
 	CreatedAt    time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at" db:"updated_at"`
 }
 
 // Admin 管理员用户模型
 type Admin struct {
-	ID           int       `json:"id" db:"id"`
+	ID           int64     `json:"id" db:"id"`
 	Username     string    `json:"username" db:"username"`
 	Password     string    `json:"-" db:"password"`
 	Email        string    `json:"email" db:"email"`
@@ -33,7 +33,7 @@ type Admin struct {
 
 // Mailbox 邮箱模型
 type Mailbox struct {
-	ID        int       `json:"id" db:"id"`
+	ID        int64     `json:"id" db:"id"`
 	UserID    *int      `json:"user_id" db:"user_id"`     // 普通用户ID
 	AdminID   *int      `json:"admin_id" db:"admin_id"`   // 管理员ID
 	Email     string    `json:"email" db:"email"`         // 完整邮箱地址
@@ -46,7 +46,7 @@ type Mailbox struct {
 
 // Domain 域名模型
 type Domain struct {
-	ID         int       `json:"id" db:"id"`
+	ID         int64     `json:"id" db:"id"`
 	Name       string    `json:"name" db:"name"`               // 域名
 	IsVerified bool      `json:"is_verified" db:"is_verified"` // 是否已验证
 	IsActive   bool      `json:"is_active" db:"is_active"`
@@ -59,7 +59,7 @@ type Domain struct {
 
 // Email 邮件模型
 type Email struct {
-	ID        int       `json:"id" db:"id"`
+	ID        int64     `json:"id" db:"id"`
 	MailboxID int       `json:"mailbox_id" db:"mailbox_id"` // 邮箱ID
 	FromAddr  string    `json:"from_addr" db:"from_addr"`   // 发件人
 	ToAddr    string    `json:"to_addr" db:"to_addr"`       // 收件人
@@ -73,7 +73,7 @@ type Email struct {
 
 // EmailForward 邮件转发模型
 type EmailForward struct {
-	ID        int       `json:"id" db:"id"`
+	ID        int64     `json:"id" db:"id"`
 	MailboxID int       `json:"mailbox_id" db:"mailbox_id"` // 源邮箱ID
 	ForwardTo string    `json:"forward_to" db:"forward_to"` // 转发到的邮箱
 	IsActive  bool      `json:"is_active" db:"is_active"`

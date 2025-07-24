@@ -44,8 +44,11 @@ func (s *Service) GetUsers() ([]UserWithStats, error) {
 				 inviter.username, admin_inviter.username
 		ORDER BY u.created_at DESC
 	`
-
-	rows, err := s.db.Query(query)
+	db, err := s.svcCtx.DB.DB()
+	if err != nil {
+		return nil, err
+	}
+	rows, err := db.Query(query)
 	if err != nil {
 		return nil, err
 	}
@@ -95,14 +98,13 @@ func (s *Service) GetUserByID(userID int64) (*UserWithStats, error) {
 	`
 
 	var user UserWithStats
-	err := s.db.QueryRow(query, userID).Scan(
-		&user.ID, &user.Username, &user.Email, &user.IsActive, &user.Contribution,
-		&user.InviteCode, &user.InvitedBy, &user.CreatedAt, &user.UpdatedAt,
-		&user.MailboxCount, &user.InviterName,
-	)
-
+	db, err := s.svcCtx.DB.DB()
 	if err != nil {
-		if err == sql.ErrNoRows {
+		return nil, err
+	}
+	err = db.QueryRow(query, userID).Scan(&user)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("用户不存在")
 		}
 		return nil, err

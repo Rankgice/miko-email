@@ -22,7 +22,7 @@ func main() {
 	}
 
 	// 创建邮件服务
-	emailService := email.NewService(sqlDB)
+	emailService := email.NewService(svcCtx)
 
 	// 启动邮件服务器（SMTP, IMAP, POP3）
 	// 启动多个SMTP端口

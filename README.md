@@ -98,15 +98,12 @@ cd miko-email
 go mod tidy
 ```
 
-3. **初始化数据库**
-```bash
-go run cmd/init/main.go
-```
-
-4. **启动服务**
+3. **启动服务**
 ```bash
 go run main.go
 ```
+
+> **注意**: 数据库表结构现在使用GORM自动迁移，无需手动初始化数据库。
 
 5. **访问系统**
 - Web界面: http://localhost:8080
