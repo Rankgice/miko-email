@@ -26,7 +26,8 @@ import (
 	"golang.org/x/text/encoding/simplifiedchinese"
 	"golang.org/x/text/encoding/traditionalchinese"
 	"golang.org/x/text/transform"
-	"miko-email/internal/services
+	"miko-email/internal/services/forward"
+	"miko-email/internal/services/smtp"
 
 	"miko-email/internal/models"
 )
@@ -102,8 +103,8 @@ func NewService(db *sql.DB) *Service {
 // StartSMTPServer 启动SMTP服务器
 func (s *Service) StartSMTPServer(port string) error {
 	log.Printf("SMTP server starting on port %s", port)
-	
 
+	// 简单的SMTP服务器实现
 	listener, err := net.Listen("tcp", ":"+port)
 	if err != nil {
 		return fmt.Errorf("failed to start SMTP server: %w", err)
@@ -126,8 +127,8 @@ func (s *Service) StartSMTPServer(port string) error {
 // StartIMAPServer 启动IMAP服务器
 func (s *Service) StartIMAPServer(port string) error {
 	log.Printf("IMAP server starting on port %s", port)
-	
 
+	listener, err := net.Listen("tcp", ":"+port)
 	if err != nil {
 		return fmt.Errorf("failed to start IMAP server: %w", err)
 	}
@@ -149,8 +150,8 @@ func (s *Service) StartIMAPServer(port string) error {
 // StartPOP3Server 启动POP3服务器
 func (s *Service) StartPOP3Server(port string) error {
 	log.Printf("POP3 server starting on port %s", port)
-	
 
+	listener, err := net.Listen("tcp", ":"+port)
 	if err != nil {
 		return fmt.Errorf("failed to start POP3 server: %w", err)
 	}
@@ -325,7 +326,6 @@ func (session *SMTPSession) handleHelo(args string) {
 
 // IMAPSession IMAP会话
 type IMAPSession struct {
-	conn     net.Conn
 	conn    net.Conn
 	reader  *bufio.Reader
 	writer  *bufio.Writer
@@ -334,6 +334,7 @@ type IMAPSession struct {
 	user    string
 	mailbox string
 	tag     string
+}
 
 // POP3Session POP3会话
 type POP3Session struct {
@@ -1828,12 +1829,12 @@ func decodeQuotedPrintableHeaderSMTP(s string) string {
 func extractBoundaryFromContentType(contentType string) string {
 	// 多种boundary格式的正则表达式
 	patterns := []string{
-		`boundary\s*=\s*"([^"]+)"`,           // boundary="value"
 		`boundary\s*=\s*"([^"]+)"`, // boundary="value"
 		`boundary\s*=\s*'([^']+)'`, // boundary='value'
 		`boundary\s*=\s*([^;\s]+)`, // boundary=value
 		`boundary\s*:\s*"([^"]+)"`, // boundary: "value"
 		`boundary\s*:\s*([^;\s]+)`, // boundary: value
+	}
 
 	for _, pattern := range patterns {
 		re := regexp.MustCompile(`(?i)` + pattern) // 不区分大小写
@@ -1883,9 +1884,9 @@ func detectBoundaryFromBody(body string) string {
 
 			// Steam邮件的boundary通常包含这些特征
 			if strings.Contains(boundary, "_") || strings.Contains(boundary, "=") ||
-			   strings.Contains(boundary, "Boundary") || strings.Contains(boundary, "boundary") ||
 				strings.Contains(boundary, "Boundary") || strings.Contains(boundary, "boundary") ||
 				len(boundary) > 15 { // 长boundary通常是有效的
+
 				// 验证这是一个有效的boundary
 				if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_=\-]+$`, boundary); matched {
 					log.Printf("从正文检测到boundary (Steam/通用格式): %s", boundary)
@@ -2195,8 +2196,8 @@ func parseMIMEMultipart(body, boundary string) string {
 // GetEmails 获取邮件列表
 func (s *Service) GetEmails(mailboxID int, folder string, page, limit int) ([]models.Email, int, error) {
 	offset := (page - 1) * limit
-	
 
+	// 获取总数
 	var total int
 	err := s.db.QueryRow(`
 		SELECT COUNT(*) FROM emails 
@@ -2205,8 +2206,8 @@ func (s *Service) GetEmails(mailboxID int, folder string, page, limit int) ([]mo
 	if err != nil {
 		return nil, 0, err
 	}
-	
 
+	// 获取邮件列表
 	query := `
 		SELECT id, mailbox_id, from_addr, to_addr, subject, body, is_read, folder, created_at, updated_at
 		FROM emails 
@@ -2214,14 +2215,14 @@ func (s *Service) GetEmails(mailboxID int, folder string, page, limit int) ([]mo
 		ORDER BY created_at DESC
 		LIMIT ? OFFSET ?
 	`
-	
 
+	rows, err := s.db.Query(query, mailboxID, folder, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}
 	defer rows.Close()
-	
 
+	var emails []models.Email
 	for rows.Next() {
 		var email models.Email
 		err = rows.Scan(&email.ID, &email.MailboxID, &email.FromAddr, &email.ToAddr,
@@ -2232,8 +2233,8 @@ func (s *Service) GetEmails(mailboxID int, folder string, page, limit int) ([]mo
 		}
 		emails = append(emails, email)
 	}
-	
 
+	return emails, total, nil
 }
 
 // GetEmailByID 根据ID获取邮件
@@ -2244,20 +2245,20 @@ func (s *Service) GetEmailByID(emailID, mailboxID int) (*models.Email, error) {
 		FROM emails 
 		WHERE id = ? AND mailbox_id = ?
 	`
-	
 
+	err := s.db.QueryRow(query, emailID, mailboxID).Scan(
 		&email.ID, &email.MailboxID, &email.FromAddr, &email.ToAddr,
 		&email.Subject, &email.Body, &email.IsRead, &email.Folder,
 		&email.CreatedAt, &email.UpdatedAt)
-	
 
+	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, fmt.Errorf("邮件不存在")
 		}
 		return nil, err
 	}
-	
 
+	return &email, nil
 }
 
 // MarkAsRead 标记邮件为已读
@@ -2267,8 +2268,8 @@ func (s *Service) MarkAsRead(emailID, mailboxID int) error {
 		SET is_read = 1, updated_at = ?
 		WHERE id = ? AND mailbox_id = ?
 	`, time.Now(), emailID, mailboxID)
-	
 
+	return err
 }
 
 // DeleteEmail 删除邮件
@@ -2277,6 +2278,6 @@ func (s *Service) DeleteEmail(emailID, mailboxID int) error {
 		DELETE FROM emails 
 		WHERE id = ? AND mailbox_id = ?
 	`, emailID, mailboxID)
-	
 
+	return err
 }
