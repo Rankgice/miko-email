@@ -34,11 +34,11 @@ type Admin struct {
 // Mailbox 邮箱模型
 type Mailbox struct {
 	ID        int       `json:"id" db:"id"`
-	UserID    *int      `json:"user_id" db:"user_id"`       // 普通用户ID
-	AdminID   *int      `json:"admin_id" db:"admin_id"`     // 管理员ID
-	Email     string    `json:"email" db:"email"`           // 完整邮箱地址
-	Password  string    `json:"-" db:"password"`            // 邮箱密码
-	DomainID  int       `json:"domain_id" db:"domain_id"`   // 域名ID
+	UserID    *int      `json:"user_id" db:"user_id"`     // 普通用户ID
+	AdminID   *int      `json:"admin_id" db:"admin_id"`   // 管理员ID
+	Email     string    `json:"email" db:"email"`         // 完整邮箱地址
+	Password  string    `json:"-" db:"password"`          // 邮箱密码
+	DomainID  int       `json:"domain_id" db:"domain_id"` // 域名ID
 	IsActive  bool      `json:"is_active" db:"is_active"`
 	CreatedAt time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
@@ -47,7 +47,7 @@ type Mailbox struct {
 // Domain 域名模型
 type Domain struct {
 	ID         int       `json:"id" db:"id"`
-	Name       string    `json:"name" db:"name"`             // 域名
+	Name       string    `json:"name" db:"name"`               // 域名
 	IsVerified bool      `json:"is_verified" db:"is_verified"` // 是否已验证
 	IsActive   bool      `json:"is_active" db:"is_active"`
 	MXRecord   string    `json:"mx_record" db:"mx_record"`   // MX记录
@@ -59,24 +59,24 @@ type Domain struct {
 
 // Email 邮件模型
 type Email struct {
-	ID         int       `json:"id" db:"id"`
-	MailboxID  int       `json:"mailbox_id" db:"mailbox_id"` // 邮箱ID
-	FromAddr   string    `json:"from_addr" db:"from_addr"`   // 发件人
-	ToAddr     string    `json:"to_addr" db:"to_addr"`       // 收件人
-	Subject    string    `json:"subject" db:"subject"`       // 主题
-	Body       string    `json:"body" db:"body"`             // 邮件内容
-	IsRead     bool      `json:"is_read" db:"is_read"`       // 是否已读
-	Folder     string    `json:"folder" db:"folder"`         // 文件夹 (inbox, sent, trash)
-	CreatedAt  time.Time `json:"created_at" db:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at" db:"updated_at"`
+	ID        int       `json:"id" db:"id"`
+	MailboxID int       `json:"mailbox_id" db:"mailbox_id"` // 邮箱ID
+	FromAddr  string    `json:"from_addr" db:"from_addr"`   // 发件人
+	ToAddr    string    `json:"to_addr" db:"to_addr"`       // 收件人
+	Subject   string    `json:"subject" db:"subject"`       // 主题
+	Body      string    `json:"body" db:"body"`             // 邮件内容
+	IsRead    bool      `json:"is_read" db:"is_read"`       // 是否已读
+	Folder    string    `json:"folder" db:"folder"`         // 文件夹 (inbox, sent, trash)
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
 }
 
 // EmailForward 邮件转发模型
 type EmailForward struct {
-	ID          int       `json:"id" db:"id"`
-	MailboxID   int       `json:"mailbox_id" db:"mailbox_id"`     // 源邮箱ID
-	ForwardTo   string    `json:"forward_to" db:"forward_to"`     // 转发到的邮箱
-	IsActive    bool      `json:"is_active" db:"is_active"`
-	CreatedAt   time.Time `json:"created_at" db:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at" db:"updated_at"`
+	ID        int       `json:"id" db:"id"`
+	MailboxID int       `json:"mailbox_id" db:"mailbox_id"` // 源邮箱ID
+	ForwardTo string    `json:"forward_to" db:"forward_to"` // 转发到的邮箱
+	IsActive  bool      `json:"is_active" db:"is_active"`
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
 }

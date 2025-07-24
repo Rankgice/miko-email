@@ -148,7 +148,7 @@ func (s *Service) GetUserMailboxes(userID int) ([]models.Mailbox, error) {
 
 // UpdateUserStatus 更新用户状态
 func (s *Service) UpdateUserStatus(userID int, isActive bool) error {
-	_, err := s.db.Exec("UPDATE users SET is_active = ?, updated_at = ? WHERE id = ?", 
+	_, err := s.db.Exec("UPDATE users SET is_active = ?, updated_at = ? WHERE id = ?",
 		isActive, time.Now(), userID)
 	return err
 }

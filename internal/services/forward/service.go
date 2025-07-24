@@ -16,19 +16,19 @@ func NewService(db *sql.DB) *Service {
 
 // ForwardRule 转发规则结构
 type ForwardRule struct {
-	ID                int       `json:"id"`
-	MailboxID         int       `json:"mailbox_id"`
-	SourceEmail       string    `json:"source_email"`
-	TargetEmail       string    `json:"target_email"`
-	Enabled           bool      `json:"enabled"`
-	KeepOriginal      bool      `json:"keep_original"`
-	ForwardAttachments bool     `json:"forward_attachments"`
-	SubjectPrefix     string    `json:"subject_prefix"`
-	Description       string    `json:"description"`
-	ForwardCount      int       `json:"forward_count"`
-	LastForwardAt     *time.Time `json:"last_forward_at"`
-	CreatedAt         time.Time `json:"created_at"`
-	UpdatedAt         time.Time `json:"updated_at"`
+	ID                 int        `json:"id"`
+	MailboxID          int        `json:"mailbox_id"`
+	SourceEmail        string     `json:"source_email"`
+	TargetEmail        string     `json:"target_email"`
+	Enabled            bool       `json:"enabled"`
+	KeepOriginal       bool       `json:"keep_original"`
+	ForwardAttachments bool       `json:"forward_attachments"`
+	SubjectPrefix      string     `json:"subject_prefix"`
+	Description        string     `json:"description"`
+	ForwardCount       int        `json:"forward_count"`
+	LastForwardAt      *time.Time `json:"last_forward_at"`
+	CreatedAt          time.Time  `json:"created_at"`
+	UpdatedAt          time.Time  `json:"updated_at"`
 }
 
 // CreateForwardRuleRequest 创建转发规则请求
@@ -53,7 +53,7 @@ func (s *Service) GetForwardRulesByUser(userID int) ([]ForwardRule, error) {
 		WHERE m.user_id = ?
 		ORDER BY ef.created_at DESC
 	`
-	
+
 	rows, err := s.db.Query(query, userID)
 	if err != nil {
 		return nil, fmt.Errorf("查询转发规则失败: %w", err)
@@ -64,7 +64,7 @@ func (s *Service) GetForwardRulesByUser(userID int) ([]ForwardRule, error) {
 	for rows.Next() {
 		var rule ForwardRule
 		var lastForwardAt sql.NullTime
-		
+
 		err := rows.Scan(
 			&rule.ID, &rule.MailboxID, &rule.SourceEmail, &rule.TargetEmail,
 			&rule.Enabled, &rule.KeepOriginal, &rule.ForwardAttachments,
@@ -74,11 +74,11 @@ func (s *Service) GetForwardRulesByUser(userID int) ([]ForwardRule, error) {
 		if err != nil {
 			return nil, fmt.Errorf("扫描转发规则失败: %w", err)
 		}
-		
+
 		if lastForwardAt.Valid {
 			rule.LastForwardAt = &lastForwardAt.Time
 		}
-		
+
 		rules = append(rules, rule)
 	}
 
@@ -95,28 +95,28 @@ func (s *Service) GetForwardRuleByID(ruleID int, userID int) (*ForwardRule, erro
 		JOIN mailboxes m ON ef.mailbox_id = m.id
 		WHERE ef.id = ? AND m.user_id = ?
 	`
-	
+
 	var rule ForwardRule
 	var lastForwardAt sql.NullTime
-	
+
 	err := s.db.QueryRow(query, ruleID, userID).Scan(
 		&rule.ID, &rule.MailboxID, &rule.SourceEmail, &rule.TargetEmail,
 		&rule.Enabled, &rule.KeepOriginal, &rule.ForwardAttachments,
 		&rule.SubjectPrefix, &rule.Description, &rule.ForwardCount,
 		&lastForwardAt, &rule.CreatedAt, &rule.UpdatedAt,
 	)
-	
+
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, fmt.Errorf("转发规则不存在")
 		}
 		return nil, fmt.Errorf("查询转发规则失败: %w", err)
 	}
-	
+
 	if lastForwardAt.Valid {
 		rule.LastForwardAt = &lastForwardAt.Time
 	}
-	
+
 	return &rule, nil
 }
 
@@ -124,7 +124,7 @@ func (s *Service) GetForwardRuleByID(ruleID int, userID int) (*ForwardRule, erro
 func (s *Service) CreateForwardRule(userID int, req CreateForwardRuleRequest) (*ForwardRule, error) {
 	// 首先获取邮箱ID
 	var mailboxID int
-	err := s.db.QueryRow("SELECT id FROM mailboxes WHERE email = ? AND user_id = ?", 
+	err := s.db.QueryRow("SELECT id FROM mailboxes WHERE email = ? AND user_id = ?",
 		req.SourceEmail, userID).Scan(&mailboxID)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -135,7 +135,7 @@ func (s *Service) CreateForwardRule(userID int, req CreateForwardRuleRequest) (*
 
 	// 检查是否已存在相同的转发规则
 	var count int
-	err = s.db.QueryRow("SELECT COUNT(*) FROM email_forwards WHERE mailbox_id = ? AND target_email = ?", 
+	err = s.db.QueryRow("SELECT COUNT(*) FROM email_forwards WHERE mailbox_id = ? AND target_email = ?",
 		mailboxID, req.TargetEmail).Scan(&count)
 	if err != nil {
 		return nil, fmt.Errorf("检查转发规则失败: %w", err)
@@ -151,9 +151,9 @@ func (s *Service) CreateForwardRule(userID int, req CreateForwardRuleRequest) (*
 		                           keep_original, forward_attachments, subject_prefix, 
 		                           description, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, mailboxID, req.SourceEmail, req.TargetEmail, req.Enabled, 
-	   req.KeepOriginal, req.ForwardAttachments, req.SubjectPrefix, 
-	   req.Description, now, now)
+	`, mailboxID, req.SourceEmail, req.TargetEmail, req.Enabled,
+		req.KeepOriginal, req.ForwardAttachments, req.SubjectPrefix,
+		req.Description, now, now)
 
 	if err != nil {
 		return nil, fmt.Errorf("创建转发规则失败: %w", err)
@@ -178,7 +178,7 @@ func (s *Service) UpdateForwardRule(ruleID int, userID int, req CreateForwardRul
 
 	// 获取新的邮箱ID
 	var mailboxID int
-	err = s.db.QueryRow("SELECT id FROM mailboxes WHERE email = ? AND user_id = ?", 
+	err = s.db.QueryRow("SELECT id FROM mailboxes WHERE email = ? AND user_id = ?",
 		req.SourceEmail, userID).Scan(&mailboxID)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -194,9 +194,9 @@ func (s *Service) UpdateForwardRule(ruleID int, userID int, req CreateForwardRul
 		    keep_original = ?, forward_attachments = ?, subject_prefix = ?, 
 		    description = ?, updated_at = ?
 		WHERE id = ?
-	`, mailboxID, req.SourceEmail, req.TargetEmail, req.Enabled, 
-	   req.KeepOriginal, req.ForwardAttachments, req.SubjectPrefix, 
-	   req.Description, time.Now(), ruleID)
+	`, mailboxID, req.SourceEmail, req.TargetEmail, req.Enabled,
+		req.KeepOriginal, req.ForwardAttachments, req.SubjectPrefix,
+		req.Description, time.Now(), ruleID)
 
 	if err != nil {
 		return fmt.Errorf("更新转发规则失败: %w", err)
@@ -231,7 +231,7 @@ func (s *Service) ToggleForwardRule(ruleID int, userID int, enabled bool) error 
 	}
 
 	// 更新状态
-	_, err = s.db.Exec("UPDATE email_forwards SET enabled = ?, updated_at = ? WHERE id = ?", 
+	_, err = s.db.Exec("UPDATE email_forwards SET enabled = ?, updated_at = ? WHERE id = ?",
 		enabled, time.Now(), ruleID)
 	if err != nil {
 		return fmt.Errorf("更新转发规则状态失败: %w", err)
@@ -293,11 +293,11 @@ func (s *Service) IncrementForwardCount(ruleID int) error {
 		SET forward_count = forward_count + 1, last_forward_at = ?
 		WHERE id = ?
 	`, time.Now(), ruleID)
-	
+
 	if err != nil {
 		return fmt.Errorf("更新转发次数失败: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -310,7 +310,7 @@ func (s *Service) GetActiveForwardRules(sourceEmail string) ([]ForwardRule, erro
 		FROM email_forwards ef
 		WHERE ef.source_email = ? AND ef.enabled = 1
 	`
-	
+
 	rows, err := s.db.Query(query, sourceEmail)
 	if err != nil {
 		return nil, fmt.Errorf("查询活跃转发规则失败: %w", err)
@@ -321,7 +321,7 @@ func (s *Service) GetActiveForwardRules(sourceEmail string) ([]ForwardRule, erro
 	for rows.Next() {
 		var rule ForwardRule
 		var lastForwardAt sql.NullTime
-		
+
 		err := rows.Scan(
 			&rule.ID, &rule.MailboxID, &rule.SourceEmail, &rule.TargetEmail,
 			&rule.Enabled, &rule.KeepOriginal, &rule.ForwardAttachments,
@@ -331,11 +331,11 @@ func (s *Service) GetActiveForwardRules(sourceEmail string) ([]ForwardRule, erro
 		if err != nil {
 			return nil, fmt.Errorf("扫描转发规则失败: %w", err)
 		}
-		
+
 		if lastForwardAt.Valid {
 			rule.LastForwardAt = &lastForwardAt.Time
 		}
-		
+
 		rules = append(rules, rule)
 	}
 
