@@ -652,10 +652,63 @@ func (h *EmailHandler) TestForwardRule(c *gin.Context) {
 		return
 	}
 
-	// 暂时返回成功响应，实际应该发送测试邮件
+	// 获取用户ID
+	userID := c.GetInt("user_id")
+
+	// 获取转发规则详情
+	rule, err := h.forwardService.GetForwardRuleByID(id, userID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"success": false,
+			"message": "转发规则不存在或无权限访问",
+		})
+		return
+	}
+
+	// 检查规则是否启用
+	if !rule.Enabled {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"message": "转发规则已禁用，无法测试",
+		})
+		return
+	}
+
+	// 构建测试邮件的主题和内容
+	testSubject := req.Subject
+	if testSubject == "" {
+		testSubject = "测试转发邮件 - " + time.Now().Format("2006-01-02 15:04:05")
+	}
+
+	testContent := req.Content
+	if testContent == "" {
+		testContent = fmt.Sprintf(`这是一封测试转发功能的邮件。
+
+测试时间: %s
+源邮箱: %s
+目标邮箱: %s
+转发规则ID: %d
+
+如果您收到这封邮件，说明转发功能正常工作。`,
+			time.Now().Format("2006-01-02 15:04:05"),
+			rule.SourceEmail,
+			rule.TargetEmail,
+			rule.ID)
+	}
+
+	// 发送测试邮件到源邮箱，触发转发
+	err = h.emailService.SendTestForwardEmail(rule.SourceEmail, rule.TargetEmail, testSubject, testContent, rule)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"message": "测试邮件发送失败: " + err.Error(),
+		})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
-		"message": fmt.Sprintf("转发规则 %d 测试邮件发送成功", id),
+		"message": fmt.Sprintf("测试邮件已发送到 %s，如果转发规则正常，您应该会在 %s 收到转发邮件", rule.SourceEmail, rule.TargetEmail),
 	})
 }
 

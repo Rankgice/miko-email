@@ -184,7 +184,7 @@
                             <i class="bi bi-info-circle me-2"></i>
                             设置邮件转发后，发送到您域名邮箱的邮件将自动转发到指定的外部邮箱。
                         </div>
-                        
+
                         <form id="forwardForm">
                             <input type="hidden" id="ruleId" value="">
                             <div class="row mb-3">
@@ -245,7 +245,7 @@
                                     <button type="submit" class="btn btn-success me-2">
                                         <i class="bi bi-check-circle"></i> 保存转发规则
                                     </button>
-                                    <button type="button" class="btn btn-outline-info" onclick="testForwardRule()">
+                                    <button type="button" class="btn btn-outline-info" onclick="testForwardRuleInEdit()">
                                         <i class="bi bi-envelope-check"></i> 测试转发
                                     </button>
                                 </div>
@@ -270,22 +270,22 @@
                         <div class="table-responsive">
                             <table class="table table-hover">
                                 <thead class="table-light">
-                                    <tr>
-                                        <th>源邮箱</th>
-                                        <th>目标邮箱</th>
-                                        <th>状态</th>
-                                        <th>保留副本</th>
-                                        <th>转发次数</th>
-                                        <th>创建时间</th>
-                                        <th>操作</th>
-                                    </tr>
+                                <tr>
+                                    <th>源邮箱</th>
+                                    <th>目标邮箱</th>
+                                    <th>状态</th>
+                                    <th>保留副本</th>
+                                    <th>转发次数</th>
+                                    <th>创建时间</th>
+                                    <th>操作</th>
+                                </tr>
                                 </thead>
                                 <tbody id="forwardRulesTableBody">
-                                    <!-- 动态加载转发规则 -->
+                                <!-- 动态加载转发规则 -->
                                 </tbody>
                             </table>
                         </div>
-                        
+
                         <!-- 空状态 -->
                         <div id="emptyState" class="text-center py-5" style="display: none;">
                             <i class="bi bi-inbox display-1 text-muted"></i>
@@ -369,77 +369,77 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
 <script>
-let currentEditingRuleId = null;
+    let currentEditingRuleId = null;
 
-// 页面加载时初始化
-document.addEventListener('DOMContentLoaded', function() {
-    loadMailboxes();
-    loadForwardRules();
-    loadStatistics();
-    initForwardForm();
-});
-
-// 初始化转发表单
-function initForwardForm() {
-    document.getElementById('forwardForm').addEventListener('submit', function(e) {
-        e.preventDefault();
-        saveForwardRule();
+    // 页面加载时初始化
+    document.addEventListener('DOMContentLoaded', function() {
+        loadMailboxes();
+        loadForwardRules();
+        loadStatistics();
+        initForwardForm();
     });
-}
 
-// 加载邮箱列表
-async function loadMailboxes() {
-    try {
-        const response = await axios.get('/api/mailboxes');
-        if (response.data.success) {
-            const mailboxes = response.data.data;
-            const sourceSelect = document.getElementById('sourceMailbox');
-            sourceSelect.innerHTML = '<option value="">选择要转发的邮箱...</option>';
+    // 初始化转发表单
+    function initForwardForm() {
+        document.getElementById('forwardForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            saveForwardRule();
+        });
+    }
 
-            mailboxes.forEach(mailbox => {
-                const option = document.createElement('option');
-                option.value = mailbox.email;
-                option.textContent = mailbox.email;
-                sourceSelect.appendChild(option);
-            });
+    // 加载邮箱列表
+    async function loadMailboxes() {
+        try {
+            const response = await axios.get('/api/mailboxes');
+            if (response.data.success) {
+                const mailboxes = response.data.data;
+                const sourceSelect = document.getElementById('sourceMailbox');
+                sourceSelect.innerHTML = '<option value="">选择要转发的邮箱...</option>';
+
+                mailboxes.forEach(mailbox => {
+                    const option = document.createElement('option');
+                    option.value = mailbox.email;
+                    option.textContent = mailbox.email;
+                    sourceSelect.appendChild(option);
+                });
+            }
+        } catch (error) {
+            console.error('Failed to load mailboxes:', error);
+            showAlert('加载邮箱列表失败');
         }
-    } catch (error) {
-        console.error('Failed to load mailboxes:', error);
-        showAlert('加载邮箱列表失败');
     }
-}
 
-// 加载转发规则
-async function loadForwardRules() {
-    try {
-        const response = await axios.get('/api/forward-rules');
-        if (response.data.success) {
-            const rules = response.data.data || [];
-            renderForwardRules(rules);
-        } else {
-            showAlert('加载转发规则失败: ' + response.data.message);
+    // 加载转发规则
+    async function loadForwardRules() {
+        try {
+            const response = await axios.get('/api/forward-rules');
+            if (response.data.success) {
+                const rules = response.data.data || [];
+                renderForwardRules(rules);
+            } else {
+                showAlert('加载转发规则失败: ' + response.data.message);
+            }
+        } catch (error) {
+            console.error('Failed to load forward rules:', error);
+            // 如果API不存在，显示空状态
+            renderForwardRules([]);
         }
-    } catch (error) {
-        console.error('Failed to load forward rules:', error);
-        // 如果API不存在，显示空状态
-        renderForwardRules([]);
-    }
-}
-
-// 渲染转发规则列表
-function renderForwardRules(rules) {
-    const tbody = document.getElementById('forwardRulesTableBody');
-    const emptyState = document.getElementById('emptyState');
-
-    if (rules.length === 0) {
-        tbody.innerHTML = '';
-        emptyState.style.display = 'block';
-        return;
     }
 
-    emptyState.style.display = 'none';
+    // 渲染转发规则列表
+    function renderForwardRules(rules) {
+        const tbody = document.getElementById('forwardRulesTableBody');
+        const emptyState = document.getElementById('emptyState');
 
-    tbody.innerHTML = rules.map(rule => `
+        if (rules.length === 0) {
+            tbody.innerHTML = '';
+            emptyState.style.display = 'block';
+            return;
+        }
+
+        emptyState.style.display = 'none';
+
+        tbody.innerHTML = rules.map(rule => `
         <tr>
             <td>
                 <i class="bi bi-envelope me-2"></i>
@@ -485,218 +485,229 @@ function renderForwardRules(rules) {
             </td>
         </tr>
     `).join('');
-}
-
-// 加载统计信息
-async function loadStatistics() {
-    try {
-        const response = await axios.get('/api/forward-statistics');
-        if (response.data.success) {
-            const stats = response.data.data;
-            document.getElementById('totalRules').textContent = stats.total_rules || 0;
-            document.getElementById('activeRules').textContent = stats.active_rules || 0;
-            document.getElementById('todayForwards').textContent = stats.today_forwards || 0;
-            document.getElementById('totalForwards').textContent = stats.total_forwards || 0;
-        }
-    } catch (error) {
-        console.error('Failed to load statistics:', error);
-        // 设置默认值
-        document.getElementById('totalRules').textContent = '0';
-        document.getElementById('activeRules').textContent = '0';
-        document.getElementById('todayForwards').textContent = '0';
-        document.getElementById('totalForwards').textContent = '0';
     }
-}
 
-// 显示新建转发规则表单
-function addNewForwardRule() {
-    currentEditingRuleId = null;
-    document.getElementById('formTitle').textContent = '新建转发规则';
-    document.getElementById('ruleId').value = '';
-    document.getElementById('forwardForm').reset();
-    document.getElementById('forwardEnabled').checked = true;
-    document.getElementById('keepOriginal').checked = true;
-    document.getElementById('forwardAttachments').checked = true;
-    document.getElementById('forwardSubjectPrefix').value = '[转发]';
-    document.getElementById('forwardRuleForm').style.display = 'block';
-
-    // 滚动到表单
-    document.getElementById('forwardRuleForm').scrollIntoView({ behavior: 'smooth' });
-}
-
-// 编辑转发规则
-async function editForwardRule(ruleId) {
-    try {
-        const response = await axios.get(`/api/forward-rules/${ruleId}`);
-        if (response.data.success) {
-            const rule = response.data.data;
-            currentEditingRuleId = ruleId;
-
-            document.getElementById('formTitle').textContent = '编辑转发规则';
-            document.getElementById('ruleId').value = ruleId;
-            document.getElementById('sourceMailbox').value = rule.source_email;
-            document.getElementById('targetEmail').value = rule.target_email;
-            document.getElementById('forwardEnabled').checked = rule.enabled;
-            document.getElementById('keepOriginal').checked = rule.keep_original;
-            document.getElementById('forwardAttachments').checked = rule.forward_attachments;
-            document.getElementById('forwardSubjectPrefix').value = rule.subject_prefix || '[转发]';
-            document.getElementById('forwardDescription').value = rule.description || '';
-
-            document.getElementById('forwardRuleForm').style.display = 'block';
-            document.getElementById('forwardRuleForm').scrollIntoView({ behavior: 'smooth' });
-        } else {
-            showAlert('加载转发规则失败: ' + response.data.message);
-        }
-    } catch (error) {
-        console.error('Failed to load forward rule:', error);
-        showAlert('加载转发规则失败');
-    }
-}
-
-// 保存转发规则
-async function saveForwardRule() {
-    const formData = {
-        source_email: document.getElementById('sourceMailbox').value,
-        target_email: document.getElementById('targetEmail').value,
-        enabled: document.getElementById('forwardEnabled').checked,
-        keep_original: document.getElementById('keepOriginal').checked,
-        forward_attachments: document.getElementById('forwardAttachments').checked,
-        subject_prefix: document.getElementById('forwardSubjectPrefix').value,
-        description: document.getElementById('forwardDescription').value
-    };
-
-    try {
-        let response;
-        if (currentEditingRuleId) {
-            response = await axios.put(`/api/forward-rules/${currentEditingRuleId}`, formData);
-        } else {
-            response = await axios.post('/api/forward-rules', formData);
-        }
-
-        if (response.data.success) {
-            showAlert(currentEditingRuleId ? '转发规则更新成功！' : '转发规则创建成功！');
-            cancelEdit();
-            loadForwardRules();
-            loadStatistics();
-        } else {
-            showAlert(response.data.message || '保存转发规则失败');
-        }
-    } catch (error) {
-        console.error('Failed to save forward rule:', error);
-        if (error.response && error.response.data) {
-            showAlert(error.response.data.message || '保存转发规则失败');
-        } else {
-            showAlert('网络错误，请稍后重试');
+    // 加载统计信息
+    async function loadStatistics() {
+        try {
+            const response = await axios.get('/api/forward-statistics');
+            if (response.data.success) {
+                const stats = response.data.data;
+                document.getElementById('totalRules').textContent = stats.total_rules || 0;
+                document.getElementById('activeRules').textContent = stats.active_rules || 0;
+                document.getElementById('todayForwards').textContent = stats.today_forwards || 0;
+                document.getElementById('totalForwards').textContent = stats.total_forwards || 0;
+            }
+        } catch (error) {
+            console.error('Failed to load statistics:', error);
+            // 设置默认值
+            document.getElementById('totalRules').textContent = '0';
+            document.getElementById('activeRules').textContent = '0';
+            document.getElementById('todayForwards').textContent = '0';
+            document.getElementById('totalForwards').textContent = '0';
         }
     }
-}
 
-// 取消编辑
-function cancelEdit() {
-    currentEditingRuleId = null;
-    document.getElementById('forwardRuleForm').style.display = 'none';
-    document.getElementById('forwardForm').reset();
-}
+    // 显示新建转发规则表单
+    function addNewForwardRule() {
+        currentEditingRuleId = null;
+        document.getElementById('formTitle').textContent = '新建转发规则';
+        document.getElementById('ruleId').value = '';
+        document.getElementById('forwardForm').reset();
+        document.getElementById('forwardEnabled').checked = true;
+        document.getElementById('keepOriginal').checked = true;
+        document.getElementById('forwardAttachments').checked = true;
+        document.getElementById('forwardSubjectPrefix').value = '[转发]';
+        document.getElementById('forwardRuleForm').style.display = 'block';
 
-// 切换转发规则状态
-async function toggleForwardRule(ruleId, enabled) {
-    try {
-        const response = await axios.patch(`/api/forward-rules/${ruleId}/toggle`, { enabled });
-        if (response.data.success) {
-            showAlert(`转发规则已${enabled ? '启用' : '禁用'}`);
-            loadForwardRules();
-            loadStatistics();
-        } else {
-            showAlert(response.data.message || '操作失败');
+        // 滚动到表单
+        document.getElementById('forwardRuleForm').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    // 编辑转发规则
+    async function editForwardRule(ruleId) {
+        try {
+            const response = await axios.get(`/api/forward-rules/${ruleId}`);
+            if (response.data.success) {
+                const rule = response.data.data;
+                currentEditingRuleId = ruleId;
+
+                document.getElementById('formTitle').textContent = '编辑转发规则';
+                document.getElementById('ruleId').value = ruleId;
+                document.getElementById('sourceMailbox').value = rule.source_email;
+                document.getElementById('targetEmail').value = rule.target_email;
+                document.getElementById('forwardEnabled').checked = rule.enabled;
+                document.getElementById('keepOriginal').checked = rule.keep_original;
+                document.getElementById('forwardAttachments').checked = rule.forward_attachments;
+                document.getElementById('forwardSubjectPrefix').value = rule.subject_prefix || '[转发]';
+                document.getElementById('forwardDescription').value = rule.description || '';
+
+                document.getElementById('forwardRuleForm').style.display = 'block';
+                document.getElementById('forwardRuleForm').scrollIntoView({ behavior: 'smooth' });
+            } else {
+                showAlert('加载转发规则失败: ' + response.data.message);
+            }
+        } catch (error) {
+            console.error('Failed to load forward rule:', error);
+            showAlert('加载转发规则失败');
         }
-    } catch (error) {
-        console.error('Failed to toggle forward rule:', error);
-        showAlert('操作失败，请稍后重试');
     }
-}
 
-// 删除转发规则
-function deleteForwardRule(ruleId) {
-    // 这里应该显示确认对话框，暂时简化处理
-    if (confirm('确定要删除这个转发规则吗？')) {
-        performDeleteForwardRule(ruleId);
-    }
-}
+    // 保存转发规则
+    async function saveForwardRule() {
+        const formData = {
+            source_email: document.getElementById('sourceMailbox').value,
+            target_email: document.getElementById('targetEmail').value,
+            enabled: document.getElementById('forwardEnabled').checked,
+            keep_original: document.getElementById('keepOriginal').checked,
+            forward_attachments: document.getElementById('forwardAttachments').checked,
+            subject_prefix: document.getElementById('forwardSubjectPrefix').value,
+            description: document.getElementById('forwardDescription').value
+        };
 
-async function performDeleteForwardRule(ruleId) {
-    try {
-        const response = await axios.delete(`/api/forward-rules/${ruleId}`);
-        if (response.data.success) {
-            showAlert('转发规则删除成功！');
-            loadForwardRules();
-            loadStatistics();
-        } else {
-            showAlert(response.data.message || '删除转发规则失败');
+        try {
+            let response;
+            if (currentEditingRuleId) {
+                response = await axios.put(`/api/forward-rules/${currentEditingRuleId}`, formData);
+            } else {
+                response = await axios.post('/api/forward-rules', formData);
+            }
+
+            if (response.data.success) {
+                showAlert(currentEditingRuleId ? '转发规则更新成功！' : '转发规则创建成功！');
+                cancelEdit();
+                loadForwardRules();
+                loadStatistics();
+            } else {
+                showAlert(response.data.message || '保存转发规则失败');
+            }
+        } catch (error) {
+            console.error('Failed to save forward rule:', error);
+            if (error.response && error.response.data) {
+                showAlert(error.response.data.message || '保存转发规则失败');
+            } else {
+                showAlert('网络错误，请稍后重试');
+            }
         }
-    } catch (error) {
-        console.error('Failed to delete forward rule:', error);
-        showAlert('删除失败，请稍后重试');
     }
-}
 
-// 测试转发规则
-function testForwardRule(ruleId) {
-    // 显示测试模态框
-    const modal = new bootstrap.Modal(document.getElementById('testModal'));
-    modal.show();
+    // 取消编辑
+    function cancelEdit() {
+        currentEditingRuleId = null;
+        document.getElementById('forwardRuleForm').style.display = 'none';
+        document.getElementById('forwardForm').reset();
+    }
 
-    // 设置当前测试的规则ID
-    window.currentTestRuleId = ruleId;
-}
-
-// 发送测试邮件
-async function sendTestEmail() {
-    const subject = document.getElementById('testSubject').value;
-    const content = document.getElementById('testContent').value;
-
-    try {
-        const response = await axios.post(`/api/forward-rules/${window.currentTestRuleId}/test`, {
-            subject,
-            content
-        });
-
-        if (response.data.success) {
-            showAlert('测试邮件发送成功！请检查目标邮箱。');
-            const modal = bootstrap.Modal.getInstance(document.getElementById('testModal'));
-            modal.hide();
-        } else {
-            showAlert(response.data.message || '测试邮件发送失败');
+    // 切换转发规则状态
+    async function toggleForwardRule(ruleId, enabled) {
+        try {
+            const response = await axios.patch(`/api/forward-rules/${ruleId}/toggle`, { enabled });
+            if (response.data.success) {
+                showAlert(`转发规则已${enabled ? '启用' : '禁用'}`);
+                loadForwardRules();
+                loadStatistics();
+            } else {
+                showAlert(response.data.message || '操作失败');
+            }
+        } catch (error) {
+            console.error('Failed to toggle forward rule:', error);
+            showAlert('操作失败，请稍后重试');
         }
-    } catch (error) {
-        console.error('Failed to send test email:', error);
-        showAlert('测试邮件发送失败，请稍后重试');
     }
-}
 
-// 刷新转发规则
-function refreshForwardRules() {
-    loadForwardRules();
-    loadStatistics();
-    showAlert('数据已刷新');
-}
-
-// 显示提示信息
-function showAlert(message) {
-    document.getElementById('alertMessage').textContent = message;
-    const modal = new bootstrap.Modal(document.getElementById('alertModal'));
-    modal.show();
-}
-
-// 退出登录
-async function logout() {
-    try {
-        await axios.post('/api/logout');
-        window.location.href = '/login';
-    } catch (error) {
-        console.error('Logout error:', error);
-        window.location.href = '/login';
+    // 删除转发规则
+    function deleteForwardRule(ruleId) {
+        // 这里应该显示确认对话框，暂时简化处理
+        if (confirm('确定要删除这个转发规则吗？')) {
+            performDeleteForwardRule(ruleId);
+        }
     }
-}
+
+    async function performDeleteForwardRule(ruleId) {
+        try {
+            const response = await axios.delete(`/api/forward-rules/${ruleId}`);
+            if (response.data.success) {
+                showAlert('转发规则删除成功！');
+                loadForwardRules();
+                loadStatistics();
+            } else {
+                showAlert(response.data.message || '删除转发规则失败');
+            }
+        } catch (error) {
+            console.error('Failed to delete forward rule:', error);
+            showAlert('删除失败，请稍后重试');
+        }
+    }
+
+    // 测试转发规则
+    function testForwardRule(ruleId) {
+        // 显示测试模态框
+        const modal = new bootstrap.Modal(document.getElementById('testModal'));
+        modal.show();
+
+        // 设置当前测试的规则ID
+        window.currentTestRuleId = ruleId;
+    }
+
+    // 在编辑表单中测试转发规则
+    function testForwardRuleInEdit() {
+        if (!currentEditingRuleId) {
+            showAlert('请先保存转发规则后再进行测试');
+            return;
+        }
+
+        // 调用原有的测试函数
+        testForwardRule(currentEditingRuleId);
+    }
+
+    // 发送测试邮件
+    async function sendTestEmail() {
+        const subject = document.getElementById('testSubject').value;
+        const content = document.getElementById('testContent').value;
+
+        try {
+            const response = await axios.post(`/api/forward-rules/${window.currentTestRuleId}/test`, {
+                subject,
+                content
+            });
+
+            if (response.data.success) {
+                showAlert('测试邮件发送成功！请检查目标邮箱。');
+                const modal = bootstrap.Modal.getInstance(document.getElementById('testModal'));
+                modal.hide();
+            } else {
+                showAlert(response.data.message || '测试邮件发送失败');
+            }
+        } catch (error) {
+            console.error('Failed to send test email:', error);
+            showAlert('测试邮件发送失败，请稍后重试');
+        }
+    }
+
+    // 刷新转发规则
+    function refreshForwardRules() {
+        loadForwardRules();
+        loadStatistics();
+        showAlert('数据已刷新');
+    }
+
+    // 显示提示信息
+    function showAlert(message) {
+        document.getElementById('alertMessage').textContent = message;
+        const modal = new bootstrap.Modal(document.getElementById('alertModal'));
+        modal.show();
+    }
+
+    // 退出登录
+    async function logout() {
+        try {
+            await axios.post('/api/logout');
+            window.location.href = '/login';
+        } catch (error) {
+            console.error('Logout error:', error);
+            window.location.href = '/login';
+        }
+    }
 </script>
 </body>
 </html>

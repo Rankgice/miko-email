@@ -2117,3 +2117,46 @@ func (s *Service) DeleteEmail(emailID, mailboxID int) error {
 
 	return err
 }
+
+// SendTestForwardEmail 发送测试转发邮件
+func (s *Service) SendTestForwardEmail(sourceEmail, targetEmail, subject, content string, rule *forward.ForwardRule) error {
+	log.Printf("🧪 开始发送测试转发邮件: %s -> %s", sourceEmail, targetEmail)
+
+	// 构建转发邮件的主题
+	forwardSubject := subject
+	if rule.SubjectPrefix != "" {
+		forwardSubject = rule.SubjectPrefix + " " + subject
+	}
+
+	// 构建转发邮件的内容
+	forwardBody := fmt.Sprintf(`
+-------- 测试转发邮件 --------
+这是一封测试转发功能的邮件。
+
+原始主题: %s
+转发规则: %s -> %s
+测试时间: %s
+
+原始内容:
+%s
+
+-------- 转发信息结束 --------
+`, subject, sourceEmail, targetEmail, time.Now().Format("2006-01-02 15:04:05"), content)
+
+	// 发送转发邮件
+	err := s.sendForwardEmail(sourceEmail, targetEmail, forwardSubject, forwardBody)
+	if err != nil {
+		log.Printf("❌ 测试转发邮件发送失败: %v", err)
+		return fmt.Errorf("测试转发邮件发送失败: %w", err)
+	}
+
+	// 更新转发次数（测试也算一次转发）
+	err = s.forwardService.IncrementForwardCount(rule.ID)
+	if err != nil {
+		log.Printf("⚠️ 更新转发次数失败: %v", err)
+		// 不返回错误，因为邮件已经发送成功
+	}
+
+	log.Printf("✅ 测试转发邮件发送成功: %s -> %s", sourceEmail, targetEmail)
+	return nil
+}
