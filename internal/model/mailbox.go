@@ -37,8 +37,12 @@ func NewMailboxModel(db *gorm.DB) *MailboxModel {
 }
 
 // Create 创建邮箱
-func (m *MailboxModel) Create(mailbox *Mailbox) error {
-	return m.db.Create(mailbox).Error
+func (m *MailboxModel) Create(tx *gorm.DB, mailbox *Mailbox) error {
+	db := m.db
+	if tx != nil {
+		db = tx
+	}
+	return db.Create(mailbox).Error
 }
 
 // Update 更新邮箱
@@ -69,8 +73,12 @@ func (m *MailboxModel) Save(tx *gorm.DB, mailbox *Mailbox) error {
 }
 
 // Delete 删除邮箱
-func (m *MailboxModel) Delete(mailbox *Mailbox) error {
-	return m.db.Delete(mailbox).Error
+func (m *MailboxModel) Delete(tx *gorm.DB, mailbox *Mailbox) error {
+	db := m.db
+	if tx != nil {
+		db = tx
+	}
+	return db.Delete(mailbox).Error
 }
 
 // GetById 根据ID获取邮箱
@@ -143,8 +151,12 @@ func (m *MailboxModel) List(params MailboxReq) ([]*Mailbox, int64, error) {
 }
 
 // BatchDelete 批量删除邮箱
-func (m *MailboxModel) BatchDelete(ids []int64) error {
-	return m.db.Where("id IN ?", ids).Delete(&Mailbox{}).Error
+func (m *MailboxModel) BatchDelete(tx *gorm.DB, ids []int64) error {
+	db := m.db
+	if tx != nil {
+		db = tx
+	}
+	return db.Where("id IN ?", ids).Delete(&Mailbox{}).Error
 }
 
 // CheckEmailExist 检查邮箱是否存在
@@ -162,8 +174,12 @@ func (m *MailboxModel) CheckEmailExist(email string) (bool, error) {
 }
 
 // UpdateStatus 更新邮箱状态
-func (m *MailboxModel) UpdateStatus(id int64, isActive bool) error {
-	return m.db.Model(&Mailbox{}).Where("id = ?", id).Updates(map[string]interface{}{
+func (m *MailboxModel) UpdateStatus(tx *gorm.DB, id int64, isActive bool) error {
+	db := m.db
+	if tx != nil {
+		db = tx
+	}
+	return db.Model(&Mailbox{}).Where("id = ?", id).Updates(map[string]interface{}{
 		"is_active":  isActive,
 		"updated_at": time.Now(),
 	}).Error
@@ -198,24 +214,36 @@ func (m *MailboxModel) GetMailboxesByDomainId(domainId int64) ([]*Mailbox, error
 }
 
 // UpdatePassword 更新邮箱密码
-func (m *MailboxModel) UpdatePassword(id int64, password string) error {
-	return m.db.Model(&Mailbox{}).Where("id = ?", id).Updates(map[string]interface{}{
+func (m *MailboxModel) UpdatePassword(tx *gorm.DB, id int64, password string) error {
+	db := m.db
+	if tx != nil {
+		db = tx
+	}
+	return db.Model(&Mailbox{}).Where("id = ?", id).Updates(map[string]interface{}{
 		"password":   password,
 		"updated_at": time.Now(),
 	}).Error
 }
 
 // SoftDelete 软删除邮箱
-func (m *MailboxModel) SoftDelete(id int64) error {
-	return m.db.Model(&Mailbox{}).Where("id = ?", id).Updates(map[string]interface{}{
+func (m *MailboxModel) SoftDelete(tx *gorm.DB, id int64) error {
+	db := m.db
+	if tx != nil {
+		db = tx
+	}
+	return db.Model(&Mailbox{}).Where("id = ?", id).Updates(map[string]interface{}{
 		"is_active":  false,
 		"updated_at": time.Now(),
 	}).Error
 }
 
 // HardDelete 硬删除邮箱
-func (m *MailboxModel) HardDelete(id int64) error {
-	return m.db.Where("id = ?", id).Delete(&Mailbox{}).Error
+func (m *MailboxModel) HardDelete(tx *gorm.DB, id int64) error {
+	db := m.db
+	if tx != nil {
+		db = tx
+	}
+	return db.Where("id = ?", id).Delete(&Mailbox{}).Error
 }
 
 // GetMailboxWithOwner 获取邮箱及其所有者信息

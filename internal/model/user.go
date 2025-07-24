@@ -38,8 +38,12 @@ func NewUserModel(db *gorm.DB) *UserModel {
 }
 
 // Create 创建用户
-func (m *UserModel) Create(user *User) error {
-	return m.db.Create(user).Error
+func (m *UserModel) Create(tx *gorm.DB, user *User) error {
+	db := m.db
+	if tx != nil {
+		db = tx
+	}
+	return db.Create(user).Error
 }
 
 // Update 更新用户
@@ -70,8 +74,12 @@ func (m *UserModel) Save(tx *gorm.DB, user *User) error {
 }
 
 // Delete 删除用户
-func (m *UserModel) Delete(user *User) error {
-	return m.db.Delete(user).Error
+func (m *UserModel) Delete(tx *gorm.DB, user *User) error {
+	db := m.db
+	if tx != nil {
+		db = tx
+	}
+	return db.Delete(user).Error
 }
 
 // GetById 根据ID获取用户
@@ -165,8 +173,12 @@ func (m *UserModel) List(params UserReq) ([]*User, int64, error) {
 }
 
 // BatchDelete 批量删除用户
-func (m *UserModel) BatchDelete(ids []int64) error {
-	return m.db.Where("id IN ?", ids).Delete(&User{}).Error
+func (m *UserModel) BatchDelete(tx *gorm.DB, ids []int64) error {
+	db := m.db
+	if tx != nil {
+		db = tx
+	}
+	return db.Where("id IN ?", ids).Delete(&User{}).Error
 }
 
 // CheckUsernameExist 检查用户名是否存在
@@ -198,13 +210,21 @@ func (m *UserModel) CheckEmailExist(email string) (bool, error) {
 }
 
 // UpdateStatus 更新用户状态
-func (m *UserModel) UpdateStatus(id int64, isActive bool) error {
-	return m.db.Model(&User{}).Where("id = ?", id).Update("is_active", isActive).Error
+func (m *UserModel) UpdateStatus(tx *gorm.DB, id int64, isActive bool) error {
+	db := m.db
+	if tx != nil {
+		db = tx
+	}
+	return db.Model(&User{}).Where("id = ?", id).Update("is_active", isActive).Error
 }
 
 // UpdateContribution 更新用户贡献度
-func (m *UserModel) UpdateContribution(id int64, contribution int) error {
-	return m.db.Model(&User{}).Where("id = ?", id).Update("contribution", contribution).Error
+func (m *UserModel) UpdateContribution(tx *gorm.DB, id int64, contribution int) error {
+	db := m.db
+	if tx != nil {
+		db = tx
+	}
+	return db.Model(&User{}).Where("id = ?", id).Update("contribution", contribution).Error
 }
 
 // GetActiveUsers 获取激活的用户列表

@@ -115,7 +115,7 @@ func createDefaultAdmin(adminModel *model.AdminModel) error {
 		UpdatedAt:    time.Now(),
 	}
 
-	if err := adminModel.Create(newAdmin); err != nil {
+	if err := adminModel.Create(nil, newAdmin); err != nil {
 		return fmt.Errorf("创建管理员失败: %w", err)
 	}
 

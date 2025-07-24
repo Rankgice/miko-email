@@ -37,8 +37,12 @@ func NewAdminModel(db *gorm.DB) *AdminModel {
 }
 
 // Create 创建管理员
-func (m *AdminModel) Create(admin *Admin) error {
-	return m.db.Create(admin).Error
+func (m *AdminModel) Create(tx *gorm.DB, admin *Admin) error {
+	db := m.db
+	if tx != nil {
+		db = tx
+	}
+	return db.Create(admin).Error
 }
 
 // Update 更新管理员
@@ -69,8 +73,12 @@ func (m *AdminModel) Save(tx *gorm.DB, admin *Admin) error {
 }
 
 // Delete 删除管理员
-func (m *AdminModel) Delete(admin *Admin) error {
-	return m.db.Delete(admin).Error
+func (m *AdminModel) Delete(tx *gorm.DB, admin *Admin) error {
+	db := m.db
+	if tx != nil {
+		db = tx
+	}
+	return db.Delete(admin).Error
 }
 
 // GetById 根据ID获取管理员
@@ -161,8 +169,12 @@ func (m *AdminModel) List(params AdminReq) ([]*Admin, int64, error) {
 }
 
 // BatchDelete 批量删除管理员
-func (m *AdminModel) BatchDelete(ids []int64) error {
-	return m.db.Where("id IN ?", ids).Delete(&Admin{}).Error
+func (m *AdminModel) BatchDelete(tx *gorm.DB, ids []int64) error {
+	db := m.db
+	if tx != nil {
+		db = tx
+	}
+	return db.Where("id IN ?", ids).Delete(&Admin{}).Error
 }
 
 // CheckUsernameExist 检查用户名是否存在
@@ -194,13 +206,21 @@ func (m *AdminModel) CheckEmailExist(email string) (bool, error) {
 }
 
 // UpdateStatus 更新管理员状态
-func (m *AdminModel) UpdateStatus(id int64, isActive bool) error {
-	return m.db.Model(&Admin{}).Where("id = ?", id).Update("is_active", isActive).Error
+func (m *AdminModel) UpdateStatus(tx *gorm.DB, id int64, isActive bool) error {
+	db := m.db
+	if tx != nil {
+		db = tx
+	}
+	return db.Model(&Admin{}).Where("id = ?", id).Update("is_active", isActive).Error
 }
 
 // UpdateContribution 更新管理员贡献度
-func (m *AdminModel) UpdateContribution(id int64, contribution int) error {
-	return m.db.Model(&Admin{}).Where("id = ?", id).Update("contribution", contribution).Error
+func (m *AdminModel) UpdateContribution(tx *gorm.DB, id int64, contribution int) error {
+	db := m.db
+	if tx != nil {
+		db = tx
+	}
+	return db.Model(&Admin{}).Where("id = ?", id).Update("contribution", contribution).Error
 }
 
 // GetActiveAdmins 获取激活的管理员列表
@@ -221,16 +241,24 @@ func (m *AdminModel) AuthenticateAdmin(username string) (*Admin, error) {
 }
 
 // UpdatePassword 更新管理员密码
-func (m *AdminModel) UpdatePassword(id int64, password string) error {
-	return m.db.Model(&Admin{}).Where("id = ?", id).Updates(map[string]interface{}{
+func (m *AdminModel) UpdatePassword(tx *gorm.DB, id int64, password string) error {
+	db := m.db
+	if tx != nil {
+		db = tx
+	}
+	return db.Model(&Admin{}).Where("id = ?", id).Updates(map[string]interface{}{
 		"password":   password,
 		"updated_at": time.Now(),
 	}).Error
 }
 
 // UpdateEmail 更新管理员邮箱
-func (m *AdminModel) UpdateEmail(id int64, email string) error {
-	return m.db.Model(&Admin{}).Where("id = ?", id).Updates(map[string]interface{}{
+func (m *AdminModel) UpdateEmail(tx *gorm.DB, id int64, email string) error {
+	db := m.db
+	if tx != nil {
+		db = tx
+	}
+	return db.Model(&Admin{}).Where("id = ?", id).Updates(map[string]interface{}{
 		"email":      email,
 		"updated_at": time.Now(),
 	}).Error

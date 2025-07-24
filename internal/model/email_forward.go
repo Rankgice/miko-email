@@ -42,8 +42,12 @@ func NewEmailForwardModel(db *gorm.DB) *EmailForwardModel {
 }
 
 // Create 创建邮件转发
-func (m *EmailForwardModel) Create(emailForward *EmailForward) error {
-	return m.db.Create(emailForward).Error
+func (m *EmailForwardModel) Create(tx *gorm.DB, emailForward *EmailForward) error {
+	db := m.db
+	if tx != nil {
+		db = tx
+	}
+	return db.Create(emailForward).Error
 }
 
 // Update 更新邮件转发
@@ -74,8 +78,12 @@ func (m *EmailForwardModel) Save(tx *gorm.DB, emailForward *EmailForward) error 
 }
 
 // Delete 删除邮件转发
-func (m *EmailForwardModel) Delete(emailForward *EmailForward) error {
-	return m.db.Delete(emailForward).Error
+func (m *EmailForwardModel) Delete(tx *gorm.DB, emailForward *EmailForward) error {
+	db := m.db
+	if tx != nil {
+		db = tx
+	}
+	return db.Delete(emailForward).Error
 }
 
 // GetById 根据ID获取邮件转发
@@ -164,13 +172,21 @@ func (m *EmailForwardModel) List(params EmailForwardReq) ([]*EmailForward, int64
 }
 
 // BatchDelete 批量删除邮件转发
-func (m *EmailForwardModel) BatchDelete(ids []int64) error {
-	return m.db.Where("id IN ?", ids).Delete(&EmailForward{}).Error
+func (m *EmailForwardModel) BatchDelete(tx *gorm.DB, ids []int64) error {
+	db := m.db
+	if tx != nil {
+		db = tx
+	}
+	return db.Where("id IN ?", ids).Delete(&EmailForward{}).Error
 }
 
 // UpdateStatus 更新转发状态
-func (m *EmailForwardModel) UpdateStatus(id int64, enabled bool) error {
-	return m.db.Model(&EmailForward{}).Where("id = ?", id).Updates(map[string]interface{}{
+func (m *EmailForwardModel) UpdateStatus(tx *gorm.DB, id int64, enabled bool) error {
+	db := m.db
+	if tx != nil {
+		db = tx
+	}
+	return db.Model(&EmailForward{}).Where("id = ?", id).Updates(map[string]interface{}{
 		"enabled":    enabled,
 		"updated_at": time.Now(),
 	}).Error
@@ -200,9 +216,13 @@ func (m *EmailForwardModel) GetForwardsBySourceEmail(sourceEmail string) ([]*Ema
 }
 
 // IncrementForwardCount 增加转发次数
-func (m *EmailForwardModel) IncrementForwardCount(id int64) error {
+func (m *EmailForwardModel) IncrementForwardCount(tx *gorm.DB, id int64) error {
+	db := m.db
+	if tx != nil {
+		db = tx
+	}
 	now := time.Now()
-	return m.db.Model(&EmailForward{}).Where("id = ?", id).Updates(map[string]interface{}{
+	return db.Model(&EmailForward{}).Where("id = ?", id).Updates(map[string]interface{}{
 		"forward_count":   gorm.Expr("forward_count + 1"),
 		"last_forward_at": &now,
 		"updated_at":      now,
@@ -210,8 +230,12 @@ func (m *EmailForwardModel) IncrementForwardCount(id int64) error {
 }
 
 // UpdateForwardSettings 更新转发设置
-func (m *EmailForwardModel) UpdateForwardSettings(id int64, keepOriginal, forwardAttachments bool, subjectPrefix string) error {
-	return m.db.Model(&EmailForward{}).Where("id = ?", id).Updates(map[string]interface{}{
+func (m *EmailForwardModel) UpdateForwardSettings(tx *gorm.DB, id int64, keepOriginal, forwardAttachments bool, subjectPrefix string) error {
+	db := m.db
+	if tx != nil {
+		db = tx
+	}
+	return db.Model(&EmailForward{}).Where("id = ?", id).Updates(map[string]interface{}{
 		"keep_original":       keepOriginal,
 		"forward_attachments": forwardAttachments,
 		"subject_prefix":      subjectPrefix,
@@ -234,8 +258,12 @@ func (m *EmailForwardModel) CheckForwardRuleExist(mailboxId int64, sourceEmail, 
 }
 
 // DeleteForwardsByMailboxId 删除邮箱下的所有转发规则
-func (m *EmailForwardModel) DeleteForwardsByMailboxId(mailboxId int64) error {
-	return m.db.Where("mailbox_id = ?", mailboxId).Delete(&EmailForward{}).Error
+func (m *EmailForwardModel) DeleteForwardsByMailboxId(tx *gorm.DB, mailboxId int64) error {
+	db := m.db
+	if tx != nil {
+		db = tx
+	}
+	return db.Where("mailbox_id = ?", mailboxId).Delete(&EmailForward{}).Error
 }
 
 // GetForwardStatistics 获取转发统计信息

@@ -38,8 +38,12 @@ func NewEmailModel(db *gorm.DB) *EmailModel {
 }
 
 // Create 创建邮件
-func (m *EmailModel) Create(email *Email) error {
-	return m.db.Create(email).Error
+func (m *EmailModel) Create(tx *gorm.DB, email *Email) error {
+	db := m.db
+	if tx != nil {
+		db = tx
+	}
+	return db.Create(email).Error
 }
 
 // Update 更新邮件
@@ -70,8 +74,12 @@ func (m *EmailModel) Save(tx *gorm.DB, email *Email) error {
 }
 
 // Delete 删除邮件
-func (m *EmailModel) Delete(email *Email) error {
-	return m.db.Delete(email).Error
+func (m *EmailModel) Delete(tx *gorm.DB, email *Email) error {
+	db := m.db
+	if tx != nil {
+		db = tx
+	}
+	return db.Delete(email).Error
 }
 
 // GetById 根据ID获取邮件
@@ -151,29 +159,45 @@ func (m *EmailModel) List(params EmailReq) ([]*Email, int64, error) {
 }
 
 // BatchDelete 批量删除邮件
-func (m *EmailModel) BatchDelete(ids []int64) error {
-	return m.db.Where("id IN ?", ids).Delete(&Email{}).Error
+func (m *EmailModel) BatchDelete(tx *gorm.DB, ids []int64) error {
+	db := m.db
+	if tx != nil {
+		db = tx
+	}
+	return db.Where("id IN ?", ids).Delete(&Email{}).Error
 }
 
 // MarkAsRead 标记邮件为已读
-func (m *EmailModel) MarkAsRead(id int64) error {
-	return m.db.Model(&Email{}).Where("id = ?", id).Updates(map[string]interface{}{
+func (m *EmailModel) MarkAsRead(tx *gorm.DB, id int64) error {
+	db := m.db
+	if tx != nil {
+		db = tx
+	}
+	return db.Model(&Email{}).Where("id = ?", id).Updates(map[string]interface{}{
 		"is_read":    true,
 		"updated_at": time.Now(),
 	}).Error
 }
 
 // MarkAsUnread 标记邮件为未读
-func (m *EmailModel) MarkAsUnread(id int64) error {
-	return m.db.Model(&Email{}).Where("id = ?", id).Updates(map[string]interface{}{
+func (m *EmailModel) MarkAsUnread(tx *gorm.DB, id int64) error {
+	db := m.db
+	if tx != nil {
+		db = tx
+	}
+	return db.Model(&Email{}).Where("id = ?", id).Updates(map[string]interface{}{
 		"is_read":    false,
 		"updated_at": time.Now(),
 	}).Error
 }
 
 // MoveToFolder 移动邮件到指定文件夹
-func (m *EmailModel) MoveToFolder(id int64, folder string) error {
-	return m.db.Model(&Email{}).Where("id = ?", id).Updates(map[string]interface{}{
+func (m *EmailModel) MoveToFolder(tx *gorm.DB, id int64, folder string) error {
+	db := m.db
+	if tx != nil {
+		db = tx
+	}
+	return db.Model(&Email{}).Where("id = ?", id).Updates(map[string]interface{}{
 		"folder":     folder,
 		"updated_at": time.Now(),
 	}).Error
@@ -258,21 +282,33 @@ func (m *EmailModel) SearchEmails(mailboxId int64, keyword string, page, pageSiz
 }
 
 // DeleteEmailsByMailboxId 删除邮箱下的所有邮件
-func (m *EmailModel) DeleteEmailsByMailboxId(mailboxId int64) error {
-	return m.db.Where("mailbox_id = ?", mailboxId).Delete(&Email{}).Error
+func (m *EmailModel) DeleteEmailsByMailboxId(tx *gorm.DB, mailboxId int64) error {
+	db := m.db
+	if tx != nil {
+		db = tx
+	}
+	return db.Where("mailbox_id = ?", mailboxId).Delete(&Email{}).Error
 }
 
 // BatchMarkAsRead 批量标记为已读
-func (m *EmailModel) BatchMarkAsRead(ids []int64) error {
-	return m.db.Model(&Email{}).Where("id IN ?", ids).Updates(map[string]interface{}{
+func (m *EmailModel) BatchMarkAsRead(tx *gorm.DB, ids []int64) error {
+	db := m.db
+	if tx != nil {
+		db = tx
+	}
+	return db.Model(&Email{}).Where("id IN ?", ids).Updates(map[string]interface{}{
 		"is_read":    true,
 		"updated_at": time.Now(),
 	}).Error
 }
 
 // BatchMoveToFolder 批量移动到文件夹
-func (m *EmailModel) BatchMoveToFolder(ids []int64, folder string) error {
-	return m.db.Model(&Email{}).Where("id IN ?", ids).Updates(map[string]interface{}{
+func (m *EmailModel) BatchMoveToFolder(tx *gorm.DB, ids []int64, folder string) error {
+	db := m.db
+	if tx != nil {
+		db = tx
+	}
+	return db.Model(&Email{}).Where("id IN ?", ids).Updates(map[string]interface{}{
 		"folder":     folder,
 		"updated_at": time.Now(),
 	}).Error

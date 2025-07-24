@@ -37,8 +37,12 @@ func NewDomainModel(db *gorm.DB) *DomainModel {
 }
 
 // Create 创建域名
-func (m *DomainModel) Create(domain *Domain) error {
-	return m.db.Create(domain).Error
+func (m *DomainModel) Create(tx *gorm.DB, domain *Domain) error {
+	db := m.db
+	if tx != nil {
+		db = tx
+	}
+	return db.Create(domain).Error
 }
 
 // Update 更新域名
@@ -69,8 +73,12 @@ func (m *DomainModel) Save(tx *gorm.DB, domain *Domain) error {
 }
 
 // Delete 删除域名
-func (m *DomainModel) Delete(domain *Domain) error {
-	return m.db.Delete(domain).Error
+func (m *DomainModel) Delete(tx *gorm.DB, domain *Domain) error {
+	db := m.db
+	if tx != nil {
+		db = tx
+	}
+	return db.Delete(domain).Error
 }
 
 // GetById 根据ID获取域名
@@ -146,8 +154,12 @@ func (m *DomainModel) List(params DomainReq) ([]*Domain, int64, error) {
 }
 
 // BatchDelete 批量删除域名
-func (m *DomainModel) BatchDelete(ids []int64) error {
-	return m.db.Where("id IN ?", ids).Delete(&Domain{}).Error
+func (m *DomainModel) BatchDelete(tx *gorm.DB, ids []int64) error {
+	db := m.db
+	if tx != nil {
+		db = tx
+	}
+	return db.Where("id IN ?", ids).Delete(&Domain{}).Error
 }
 
 // CheckDomainExist 检查域名是否存在
@@ -165,13 +177,21 @@ func (m *DomainModel) CheckDomainExist(name string) (bool, error) {
 }
 
 // UpdateStatus 更新域名状态
-func (m *DomainModel) UpdateStatus(id int64, isActive bool) error {
-	return m.db.Model(&Domain{}).Where("id = ?", id).Update("is_active", isActive).Error
+func (m *DomainModel) UpdateStatus(tx *gorm.DB, id int64, isActive bool) error {
+	db := m.db
+	if tx != nil {
+		db = tx
+	}
+	return db.Model(&Domain{}).Where("id = ?", id).Update("is_active", isActive).Error
 }
 
 // UpdateVerificationStatus 更新域名验证状态
-func (m *DomainModel) UpdateVerificationStatus(id int64, isVerified bool) error {
-	return m.db.Model(&Domain{}).Where("id = ?", id).Updates(map[string]interface{}{
+func (m *DomainModel) UpdateVerificationStatus(tx *gorm.DB, id int64, isVerified bool) error {
+	db := m.db
+	if tx != nil {
+		db = tx
+	}
+	return db.Model(&Domain{}).Where("id = ?", id).Updates(map[string]interface{}{
 		"is_verified": isVerified,
 		"updated_at":  time.Now(),
 	}).Error
@@ -199,8 +219,12 @@ func (m *DomainModel) GetAvailableDomains() ([]*Domain, error) {
 }
 
 // UpdateDNSRecords 更新DNS记录
-func (m *DomainModel) UpdateDNSRecords(id int64, mxRecord, aRecord, txtRecord string) error {
-	return m.db.Model(&Domain{}).Where("id = ?", id).Updates(map[string]interface{}{
+func (m *DomainModel) UpdateDNSRecords(tx *gorm.DB, id int64, mxRecord, aRecord, txtRecord string) error {
+	db := m.db
+	if tx != nil {
+		db = tx
+	}
+	return db.Model(&Domain{}).Where("id = ?", id).Updates(map[string]interface{}{
 		"mx_record":  mxRecord,
 		"a_record":   aRecord,
 		"txt_record": txtRecord,
@@ -209,24 +233,36 @@ func (m *DomainModel) UpdateDNSRecords(id int64, mxRecord, aRecord, txtRecord st
 }
 
 // UpdateMXRecord 更新MX记录
-func (m *DomainModel) UpdateMXRecord(id int64, mxRecord string) error {
-	return m.db.Model(&Domain{}).Where("id = ?", id).Updates(map[string]interface{}{
+func (m *DomainModel) UpdateMXRecord(tx *gorm.DB, id int64, mxRecord string) error {
+	db := m.db
+	if tx != nil {
+		db = tx
+	}
+	return db.Model(&Domain{}).Where("id = ?", id).Updates(map[string]interface{}{
 		"mx_record":  mxRecord,
 		"updated_at": time.Now(),
 	}).Error
 }
 
 // UpdateARecord 更新A记录
-func (m *DomainModel) UpdateARecord(id int64, aRecord string) error {
-	return m.db.Model(&Domain{}).Where("id = ?", id).Updates(map[string]interface{}{
+func (m *DomainModel) UpdateARecord(tx *gorm.DB, id int64, aRecord string) error {
+	db := m.db
+	if tx != nil {
+		db = tx
+	}
+	return db.Model(&Domain{}).Where("id = ?", id).Updates(map[string]interface{}{
 		"a_record":   aRecord,
 		"updated_at": time.Now(),
 	}).Error
 }
 
 // UpdateTXTRecord 更新TXT记录
-func (m *DomainModel) UpdateTXTRecord(id int64, txtRecord string) error {
-	return m.db.Model(&Domain{}).Where("id = ?", id).Updates(map[string]interface{}{
+func (m *DomainModel) UpdateTXTRecord(tx *gorm.DB, id int64, txtRecord string) error {
+	db := m.db
+	if tx != nil {
+		db = tx
+	}
+	return db.Model(&Domain{}).Where("id = ?", id).Updates(map[string]interface{}{
 		"txt_record": txtRecord,
 		"updated_at": time.Now(),
 	}).Error

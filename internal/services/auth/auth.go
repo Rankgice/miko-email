@@ -135,7 +135,7 @@ func (s *Service) RegisterUser(username, password, email, domainPrefix string, d
 	}
 
 	userModel := model.NewUserModel(tx)
-	if err := userModel.Create(newUser); err != nil {
+	if err := userModel.Create(tx, newUser); err != nil {
 		tx.Rollback()
 		return nil, err
 	}
@@ -161,7 +161,7 @@ func (s *Service) RegisterUser(username, password, email, domainPrefix string, d
 	}
 
 	mailboxModel := model.NewMailboxModel(tx)
-	if err := mailboxModel.Create(newMailbox); err != nil {
+	if err := mailboxModel.Create(tx, newMailbox); err != nil {
 		tx.Rollback()
 		return nil, err
 	}
