@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"log"
+	"miko-email/internal/result"
 	"miko-email/internal/svc"
 	"mime"
 	"net/http"
@@ -72,7 +73,7 @@ func (h *EmailHandler) SendEmail(c *gin.Context) {
 	// 手动解析表单数据以确保UTF-8编码正确处理
 	err := c.Request.ParseMultipartForm(32 << 20) // 32MB max memory
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "请求参数错误"})
+		c.JSON(http.StatusBadRequest, result.ErrorReqParam)
 		return
 	}
 
@@ -88,7 +89,7 @@ func (h *EmailHandler) SendEmail(c *gin.Context) {
 
 	// 验证必填字段
 	if req.From == "" || req.To == "" || req.Subject == "" || req.Content == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "请求参数错误"})
+		c.JSON(http.StatusBadRequest, result.ErrorReqParam)
 		return
 	}
 
@@ -99,7 +100,7 @@ func (h *EmailHandler) SendEmail(c *gin.Context) {
 		for _, fileHeader := range files {
 			file, err := fileHeader.Open()
 			if err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "附件读取失败: " + err.Error()})
+				c.JSON(http.StatusBadRequest, result.ErrorSimpleResult("附件读取失败: "+err.Error()))
 				return
 			}
 			defer file.Close()
@@ -108,13 +109,13 @@ func (h *EmailHandler) SendEmail(c *gin.Context) {
 			content := make([]byte, fileHeader.Size)
 			_, err = file.Read(content)
 			if err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "附件内容读取失败: " + err.Error()})
+				c.JSON(http.StatusBadRequest, result.ErrorSimpleResult("附件内容读取失败: "+err.Error()))
 				return
 			}
 
 			// 检查文件大小限制（10MB）
 			if fileHeader.Size > 10*1024*1024 {
-				c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": fmt.Sprintf("附件 %s 超过10MB限制", fileHeader.Filename)})
+				c.JSON(http.StatusBadRequest, result.ErrorSimpleResult(fmt.Sprintf("附件 %s 超过10MB限制", fileHeader.Filename)))
 				return
 			}
 
@@ -130,26 +131,26 @@ func (h *EmailHandler) SendEmail(c *gin.Context) {
 	userID := int64(c.GetInt("user_id"))
 	isAdmin := c.GetBool("is_admin")
 	if userID == 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "未登录"})
+		c.JSON(http.StatusUnauthorized, result.ErrorSimpleResult("未登录"))
 		return
 	}
 
 	// 验证发件邮箱是否属于当前用户
 	fromMailbox, err := h.mailboxService.GetMailboxByEmail(req.From)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "发件邮箱不存在"})
+		c.JSON(http.StatusBadRequest, result.ErrorSimpleResult("发件邮箱不存在"))
 		return
 	}
 
 	// 检查邮箱所有权
 	if isAdmin {
 		if fromMailbox.AdminId == nil || *fromMailbox.AdminId != userID {
-			c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "无权使用此邮箱发送邮件"})
+			c.JSON(http.StatusForbidden, result.ErrorSimpleResult("无权使用此邮箱发送邮件"))
 			return
 		}
 	} else {
 		if fromMailbox.UserId == nil || *fromMailbox.UserId != userID {
-			c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "无权使用此邮箱发送邮件"})
+			c.JSON(http.StatusForbidden, result.ErrorSimpleResult("无权使用此邮箱发送邮件"))
 			return
 		}
 	}
@@ -214,14 +215,11 @@ func (h *EmailHandler) SendEmail(c *gin.Context) {
 
 	// 根据发送结果返回相应消息
 	if len(successfulSends) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "没有邮件发送成功"})
+		c.JSON(http.StatusBadRequest, result.ErrorSimpleResult("没有邮件发送成功"))
 	} else if len(successfulSends) == len(recipients) {
-		c.JSON(http.StatusOK, gin.H{"success": true, "message": "所有邮件发送成功"})
+		c.JSON(http.StatusOK, result.SimpleResult("所有邮件发送成功"))
 	} else {
-		c.JSON(http.StatusOK, gin.H{
-			"success": true,
-			"message": fmt.Sprintf("部分邮件发送成功 (%d/%d)", len(successfulSends), len(recipients)),
-		})
+		c.JSON(http.StatusOK, result.SimpleResult(fmt.Sprintf("部分邮件发送成功 (%d/%d)", len(successfulSends), len(recipients))))
 	}
 }
 
@@ -234,7 +232,7 @@ func (h *EmailHandler) GetEmails(c *gin.Context) {
 	userID := int64(c.GetInt("user_id"))
 	isAdmin := c.GetBool("is_admin")
 	if userID == 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "未登录"})
+		c.JSON(http.StatusUnauthorized, result.ErrorSimpleResult("未登录"))
 		return
 	}
 
@@ -260,14 +258,14 @@ func (h *EmailHandler) GetEmails(c *gin.Context) {
 	if mailboxEmail != "" {
 		targetMailbox, err = h.mailboxService.GetMailboxByEmail(mailboxEmail)
 		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "邮箱不存在"})
+			c.JSON(http.StatusBadRequest, result.ErrorSimpleResult("邮箱不存在"))
 			return
 		}
 	} else {
 		// 获取用户的邮箱列表
 		mailboxes, err := h.mailboxService.GetUserMailboxesRaw(userID, isAdmin)
 		if err != nil || len(mailboxes) == 0 {
-			c.JSON(http.StatusOK, gin.H{"success": true, "data": []interface{}{}, "total": 0})
+			c.JSON(http.StatusOK, result.ListResult([]interface{}{}, 0, 0, 0))
 			return
 		}
 		targetMailbox = mailboxes[0]
@@ -276,12 +274,12 @@ func (h *EmailHandler) GetEmails(c *gin.Context) {
 	// 检查邮箱所有权
 	if isAdmin {
 		if targetMailbox.AdminId == nil || *targetMailbox.AdminId != userID {
-			c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "无权访问此邮箱"})
+			c.JSON(http.StatusForbidden, result.ErrorSimpleResult("无权访问此邮箱"))
 			return
 		}
 	} else {
 		if targetMailbox.UserId == nil || *targetMailbox.UserId != userID {
-			c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "无权访问此邮箱"})
+			c.JSON(http.StatusForbidden, result.ErrorSimpleResult("无权访问此邮箱"))
 			return
 		}
 	}
@@ -289,17 +287,11 @@ func (h *EmailHandler) GetEmails(c *gin.Context) {
 	// 获取邮件列表
 	emails, total, err := h.emailService.GetEmails(targetMailbox.Id, emailType, page, limit)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "获取邮件失败"})
+		c.JSON(http.StatusInternalServerError, result.ErrorSimpleResult("获取邮件失败"))
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"data":    emails,
-		"total":   total,
-		"page":    page,
-		"limit":   limit,
-	})
+	c.JSON(http.StatusOK, result.ListResult(emails, int64(page), int64(limit), total))
 }
 
 // GetEmailByID 获取单个邮件详情
@@ -311,39 +303,39 @@ func (h *EmailHandler) GetEmailByID(c *gin.Context) {
 	userID := int64(c.GetInt("user_id"))
 	isAdmin := c.GetBool("is_admin")
 	if userID == 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "未登录"})
+		c.JSON(http.StatusUnauthorized, result.ErrorSimpleResult("未登录"))
 		return
 	}
 
 	emailIDStr := c.Param("id")
 	emailID, err := strconv.Atoi(emailIDStr)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "邮件ID无效"})
+		c.JSON(http.StatusBadRequest, result.ErrorSimpleResult("邮件ID无效"))
 		return
 	}
 
 	mailboxEmail := c.Query("mailbox")
 	if mailboxEmail == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "请指定邮箱"})
+		c.JSON(http.StatusBadRequest, result.ErrorSimpleResult("请指定邮箱"))
 		return
 	}
 
 	// 获取邮箱信息
 	targetMailbox, err := h.mailboxService.GetMailboxByEmail(mailboxEmail)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "邮箱不存在"})
+		c.JSON(http.StatusBadRequest, result.ErrorSimpleResult("邮箱不存在"))
 		return
 	}
 
 	// 检查邮箱所有权
 	if isAdmin {
 		if targetMailbox.AdminId == nil || *targetMailbox.AdminId != userID {
-			c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "无权访问此邮箱"})
+			c.JSON(http.StatusForbidden, result.ErrorSimpleResult("无权访问此邮箱"))
 			return
 		}
 	} else {
 		if targetMailbox.UserId == nil || *targetMailbox.UserId != userID {
-			c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "无权访问此邮箱"})
+			c.JSON(http.StatusForbidden, result.ErrorSimpleResult("无权访问此邮箱"))
 			return
 		}
 	}
@@ -351,14 +343,14 @@ func (h *EmailHandler) GetEmailByID(c *gin.Context) {
 	// 获取邮件详情
 	email, err := h.emailService.GetEmailByID(int64(emailID), targetMailbox.Id)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "邮件不存在"})
+		c.JSON(http.StatusNotFound, result.ErrorSimpleResult("邮件不存在"))
 		return
 	}
 
 	// 标记为已读
 	h.emailService.MarkAsRead(int64(emailID), targetMailbox.Id)
 
-	c.JSON(http.StatusOK, gin.H{"success": true, "data": email})
+	c.JSON(http.StatusOK, result.DataResult("获取邮件详情成功", email))
 }
 
 // DeleteEmail 删除邮件
@@ -368,7 +360,7 @@ func (h *EmailHandler) DeleteEmail(c *gin.Context) {
 	emailIDStr := c.Param("id")
 	emailID, err := strconv.Atoi(emailIDStr)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "邮件ID格式错误"})
+		c.JSON(http.StatusBadRequest, result.ErrorSimpleResult("邮件ID格式错误"))
 		return
 	}
 
@@ -382,12 +374,12 @@ func (h *EmailHandler) DeleteEmail(c *gin.Context) {
 	// 获取用户的邮箱列表来验证权限
 	userMailboxes, err := h.mailboxService.GetUserMailboxesRaw(userID, isAdmin)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "获取邮箱列表失败"})
+		c.JSON(http.StatusInternalServerError, result.ErrorSimpleResult("获取邮箱列表失败"))
 		return
 	}
 
 	if len(userMailboxes) == 0 {
-		c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "无权删除邮件"})
+		c.JSON(http.StatusForbidden, result.ErrorSimpleResult("无权删除邮件"))
 		return
 	}
 
@@ -408,7 +400,7 @@ func (h *EmailHandler) DeleteEmail(c *gin.Context) {
 			}
 		}
 		if !found {
-			c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "邮件不存在或无权访问"})
+			c.JSON(http.StatusNotFound, result.ErrorSimpleResult("邮件不存在或无权访问"))
 			return
 		}
 	}
@@ -416,11 +408,11 @@ func (h *EmailHandler) DeleteEmail(c *gin.Context) {
 	// 删除邮件
 	err = h.emailService.DeleteEmail(int64(emailID), int64(mailboxID))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "删除邮件失败"})
+		c.JSON(http.StatusInternalServerError, result.ErrorSimpleResult("删除邮件失败"))
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"success": true, "message": "邮件删除成功"})
+	c.JSON(http.StatusOK, result.SimpleResult("邮件删除成功"))
 }
 
 // 使用转发服务中的结构体，这里不需要重复定义
@@ -434,18 +426,11 @@ func (h *EmailHandler) GetForwardRules(c *gin.Context) {
 
 	rules, err := h.forwardService.GetForwardRulesByUser(userID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"message": "获取转发规则失败: " + err.Error(),
-		})
+		c.JSON(http.StatusInternalServerError, result.ErrorSimpleResult("获取转发规则失败: "+err.Error()))
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"data":    rules,
-		"message": fmt.Sprintf("用户 %s 的转发规则", username),
-	})
+	c.JSON(http.StatusOK, result.DataResult(fmt.Sprintf("用户 %s 的转发规则", username), rules))
 }
 
 // CreateForwardRule 创建转发规则
@@ -454,10 +439,7 @@ func (h *EmailHandler) CreateForwardRule(c *gin.Context) {
 
 	var req forward.CreateForwardRuleRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"message": "请求参数错误: " + err.Error(),
-		})
+		c.JSON(http.StatusBadRequest, result.ErrorSimpleResult("请求参数错误: "+err.Error()))
 		return
 	}
 
@@ -466,18 +448,11 @@ func (h *EmailHandler) CreateForwardRule(c *gin.Context) {
 
 	newRule, err := h.forwardService.CreateForwardRule(userID, req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"message": err.Error(),
-		})
+		c.JSON(http.StatusBadRequest, result.ErrorSimpleResult(err.Error()))
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"data":    newRule,
-		"message": fmt.Sprintf("用户 %s 创建转发规则成功", username),
-	})
+	c.JSON(http.StatusOK, result.DataResult(fmt.Sprintf("用户 %s 创建转发规则成功", username), newRule))
 }
 
 // GetForwardRule 获取单个转发规则
@@ -487,10 +462,7 @@ func (h *EmailHandler) GetForwardRule(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"message": "无效的规则ID",
-		})
+		c.JSON(http.StatusBadRequest, result.ErrorSimpleResult("无效的规则ID"))
 		return
 	}
 
@@ -498,17 +470,11 @@ func (h *EmailHandler) GetForwardRule(c *gin.Context) {
 
 	rule, err := h.forwardService.GetForwardRuleByID(id, userID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{
-			"success": false,
-			"message": err.Error(),
-		})
+		c.JSON(http.StatusNotFound, result.ErrorSimpleResult(err.Error()))
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"data":    rule,
-	})
+	c.JSON(http.StatusOK, result.DataResult("获取转发规则成功", rule))
 }
 
 // UpdateForwardRule 更新转发规则
@@ -518,19 +484,13 @@ func (h *EmailHandler) UpdateForwardRule(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"message": "无效的规则ID",
-		})
+		c.JSON(http.StatusBadRequest, result.ErrorSimpleResult("无效的规则ID"))
 		return
 	}
 
 	var req forward.CreateForwardRuleRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"message": "请求参数错误: " + err.Error(),
-		})
+		c.JSON(http.StatusBadRequest, result.ErrorSimpleResult("请求参数错误: "+err.Error()))
 		return
 	}
 
@@ -538,17 +498,11 @@ func (h *EmailHandler) UpdateForwardRule(c *gin.Context) {
 
 	err = h.forwardService.UpdateForwardRule(id, userID, req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"message": err.Error(),
-		})
+		c.JSON(http.StatusBadRequest, result.ErrorSimpleResult(err.Error()))
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": fmt.Sprintf("转发规则 %d 更新成功", id),
-	})
+	c.JSON(http.StatusOK, result.SimpleResult(fmt.Sprintf("转发规则 %d 更新成功", id)))
 }
 
 // DeleteForwardRule 删除转发规则
@@ -558,10 +512,7 @@ func (h *EmailHandler) DeleteForwardRule(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"message": "无效的规则ID",
-		})
+		c.JSON(http.StatusBadRequest, result.ErrorSimpleResult("无效的规则ID"))
 		return
 	}
 
@@ -569,17 +520,11 @@ func (h *EmailHandler) DeleteForwardRule(c *gin.Context) {
 
 	err = h.forwardService.DeleteForwardRule(id, userID)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"message": err.Error(),
-		})
+		c.JSON(http.StatusBadRequest, result.ErrorSimpleResult(err.Error()))
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": fmt.Sprintf("转发规则 %d 删除成功", id),
-	})
+	c.JSON(http.StatusOK, result.SimpleResult(fmt.Sprintf("转发规则 %d 删除成功", id)))
 }
 
 // ToggleForwardRule 切换转发规则状态
@@ -589,10 +534,7 @@ func (h *EmailHandler) ToggleForwardRule(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"message": "无效的规则ID",
-		})
+		c.JSON(http.StatusBadRequest, result.ErrorSimpleResult("无效的规则ID"))
 		return
 	}
 
@@ -600,10 +542,7 @@ func (h *EmailHandler) ToggleForwardRule(c *gin.Context) {
 		Enabled bool `json:"enabled"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"message": "请求参数错误: " + err.Error(),
-		})
+		c.JSON(http.StatusBadRequest, result.ErrorSimpleResult("请求参数错误: "+err.Error()))
 		return
 	}
 
@@ -611,10 +550,7 @@ func (h *EmailHandler) ToggleForwardRule(c *gin.Context) {
 
 	err = h.forwardService.ToggleForwardRule(id, userID, req.Enabled)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"message": err.Error(),
-		})
+		c.JSON(http.StatusBadRequest, result.ErrorSimpleResult(err.Error()))
 		return
 	}
 
@@ -623,10 +559,7 @@ func (h *EmailHandler) ToggleForwardRule(c *gin.Context) {
 		status = "禁用"
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": fmt.Sprintf("转发规则 %d 已%s", id, status),
-	})
+	c.JSON(http.StatusOK, result.SimpleResult(fmt.Sprintf("转发规则 %d 已%s", id, status)))
 }
 
 // TestForwardRule 测试转发规则
@@ -636,10 +569,7 @@ func (h *EmailHandler) TestForwardRule(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"message": "无效的规则ID",
-		})
+		c.JSON(http.StatusBadRequest, result.ErrorSimpleResult("无效的规则ID"))
 		return
 	}
 
@@ -648,10 +578,7 @@ func (h *EmailHandler) TestForwardRule(c *gin.Context) {
 		Content string `json:"content"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"message": "请求参数错误: " + err.Error(),
-		})
+		c.JSON(http.StatusBadRequest, result.ErrorSimpleResult("请求参数错误: "+err.Error()))
 		return
 	}
 
@@ -661,19 +588,13 @@ func (h *EmailHandler) TestForwardRule(c *gin.Context) {
 	// 获取转发规则详情
 	rule, err := h.forwardService.GetForwardRuleByID(int64(id), int64(userID))
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{
-			"success": false,
-			"message": "转发规则不存在或无权限访问",
-		})
+		c.JSON(http.StatusNotFound, result.ErrorSimpleResult("转发规则不存在或无权限访问"))
 		return
 	}
 
 	// 检查规则是否启用
 	if !rule.Enabled {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"message": "转发规则已禁用，无法测试",
-		})
+		c.JSON(http.StatusBadRequest, result.ErrorSimpleResult("转发规则已禁用，无法测试"))
 		return
 	}
 
@@ -702,17 +623,11 @@ func (h *EmailHandler) TestForwardRule(c *gin.Context) {
 	// 发送测试邮件到源邮箱，触发转发
 	err = h.emailService.SendTestForwardEmail(rule.SourceEmail, rule.TargetEmail, testSubject, testContent, rule)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"message": "测试邮件发送失败: " + err.Error(),
-		})
+		c.JSON(http.StatusInternalServerError, result.ErrorSimpleResult("测试邮件发送失败: "+err.Error()))
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": fmt.Sprintf("测试邮件已发送到 %s，如果转发规则正常，您应该会在 %s 收到转发邮件", rule.SourceEmail, rule.TargetEmail),
-	})
+	c.JSON(http.StatusOK, result.SimpleResult(fmt.Sprintf("测试邮件已发送到 %s，如果转发规则正常，您应该会在 %s 收到转发邮件", rule.SourceEmail, rule.TargetEmail)))
 }
 
 // GetForwardStatistics 获取转发统计信息
@@ -723,17 +638,11 @@ func (h *EmailHandler) GetForwardStatistics(c *gin.Context) {
 
 	stats, err := h.forwardService.GetForwardStatistics(userID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"message": "获取统计信息失败: " + err.Error(),
-		})
+		c.JSON(http.StatusInternalServerError, result.ErrorSimpleResult("获取统计信息失败: "+err.Error()))
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"data":    stats,
-	})
+	c.JSON(http.StatusOK, result.DataResult("获取转发统计信息成功", stats))
 }
 
 // buildMIMEMessage 构建MIME格式的邮件内容
@@ -812,28 +721,19 @@ func (h *EmailHandler) GetVerificationCode(c *gin.Context) {
 	}
 
 	if mailbox == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"message": "邮箱地址不能为空",
-		})
+		c.JSON(http.StatusBadRequest, result.ErrorSimpleResult("邮箱地址不能为空"))
 		return
 	}
 
 	// 验证邮箱是否属于当前用户
 	mailboxInfo, err := h.mailboxService.GetMailboxByEmail(mailbox)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{
-			"success": false,
-			"message": "邮箱不存在",
-		})
+		c.JSON(http.StatusNotFound, result.ErrorSimpleResult("邮箱不存在"))
 		return
 	}
 
 	if mailboxInfo.UserId == nil || *mailboxInfo.UserId != userID {
-		c.JSON(http.StatusForbidden, gin.H{
-			"success": false,
-			"message": "无权访问此邮箱",
-		})
+		c.JSON(http.StatusForbidden, result.ErrorSimpleResult("无权访问此邮箱"))
 		return
 	}
 
@@ -843,20 +743,14 @@ func (h *EmailHandler) GetVerificationCode(c *gin.Context) {
 	if emailIDStr != "" {
 		emailID, parseErr := strconv.Atoi(emailIDStr)
 		if parseErr != nil {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"success": false,
-				"message": "邮件ID格式错误",
-			})
+			c.JSON(http.StatusBadRequest, result.ErrorSimpleResult("邮件ID格式错误"))
 			return
 		}
 
 		// 获取特定邮件
 		email, getErr := h.emailService.GetEmailByID(int64(emailID), mailboxInfo.Id)
 		if getErr != nil {
-			c.JSON(http.StatusNotFound, gin.H{
-				"success": false,
-				"message": "邮件不存在或无权访问",
-			})
+			c.JSON(http.StatusNotFound, result.ErrorSimpleResult("邮件不存在或无权访问"))
 			return
 		}
 		emails = []*model.Email{email}
@@ -865,10 +759,7 @@ func (h *EmailHandler) GetVerificationCode(c *gin.Context) {
 		var getErr error
 		emails, _, getErr = h.emailService.GetEmails(mailboxInfo.Id, "inbox", 1, limit)
 		if getErr != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"success": false,
-				"message": "获取邮件失败: " + getErr.Error(),
-			})
+			c.JSON(http.StatusInternalServerError, result.ErrorSimpleResult("获取邮件失败: "+getErr.Error()))
 			return
 		}
 	}
@@ -901,11 +792,7 @@ func (h *EmailHandler) GetVerificationCode(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"data":    results,
-		"count":   len(results),
-	})
+	c.JSON(http.StatusOK, result.ListResult(results, 0, 0, int64(len(results))))
 }
 
 // extractVerificationCodes 从邮件内容中提取验证码

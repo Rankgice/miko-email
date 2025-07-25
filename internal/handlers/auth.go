@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"miko-email/internal/result"
 	"miko-email/internal/svc"
 	"net/http"
 
@@ -47,20 +48,20 @@ type ChangePasswordRequest struct {
 func (h *AuthHandler) Login(c *gin.Context) {
 	var req LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "请求参数错误"})
+		c.JSON(http.StatusBadRequest, result.ErrorReqParam)
 		return
 	}
 
 	user, err := h.authService.AuthenticateUser(req.Username, req.Password)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": err.Error()})
+		c.JSON(http.StatusUnauthorized, result.ErrorSimpleResult(err.Error()))
 		return
 	}
 
 	// 创建会话
 	session, err := h.sessionStore.Get(c.Request, "miko-session")
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "会话创建失败"})
+		c.JSON(http.StatusInternalServerError, result.ErrorSimpleResult("会话创建失败"))
 		return
 	}
 
@@ -69,43 +70,39 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	session.Values["is_admin"] = false
 
 	if err := session.Save(c.Request, c.Writer); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "会话保存失败"})
+		c.JSON(http.StatusInternalServerError, result.ErrorSimpleResult("会话保存失败"))
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": "登录成功",
-		"data": gin.H{
-			"user": gin.H{
-				"id":           user.Id,
-				"username":     user.Username,
-				"email":        user.Email,
-				"contribution": user.Contribution,
-				"is_admin":     false,
-			},
-		},
-	})
+	userData := gin.H{
+		"id":           user.Id,
+		"username":     user.Username,
+		"email":        user.Email,
+		"contribution": user.Contribution,
+		"is_admin":     false,
+	}
+
+	c.JSON(http.StatusOK, result.DataResult("登录成功", gin.H{"user": userData}))
 }
 
 // AdminLogin 管理员登录
 func (h *AuthHandler) AdminLogin(c *gin.Context) {
 	var req LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "请求参数错误"})
+		c.JSON(http.StatusBadRequest, result.ErrorReqParam)
 		return
 	}
 
 	admin, err := h.authService.AuthenticateAdmin(req.Username, req.Password)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": err.Error()})
+		c.JSON(http.StatusUnauthorized, result.ErrorSimpleResult(err.Error()))
 		return
 	}
 
 	// 创建会话
 	session, err := h.sessionStore.Get(c.Request, "miko-session")
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "会话创建失败"})
+		c.JSON(http.StatusInternalServerError, result.ErrorSimpleResult("会话创建失败"))
 		return
 	}
 
@@ -114,59 +111,51 @@ func (h *AuthHandler) AdminLogin(c *gin.Context) {
 	session.Values["is_admin"] = true
 
 	if err := session.Save(c.Request, c.Writer); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "会话保存失败"})
+		c.JSON(http.StatusInternalServerError, result.ErrorSimpleResult("会话保存失败"))
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": "登录成功",
-		"data": gin.H{
-			"user": gin.H{
-				"id":           admin.Id,
-				"username":     admin.Username,
-				"email":        admin.Email,
-				"contribution": admin.Contribution,
-				"is_admin":     true,
-			},
-		},
-	})
+	userData := gin.H{
+		"id":           admin.Id,
+		"username":     admin.Username,
+		"email":        admin.Email,
+		"contribution": admin.Contribution,
+		"is_admin":     true,
+	}
+
+	c.JSON(http.StatusOK, result.DataResult("登录成功", gin.H{"user": userData}))
 }
 
 // Register 用户注册
 func (h *AuthHandler) Register(c *gin.Context) {
 	var req RegisterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "请求参数错误"})
+		c.JSON(http.StatusBadRequest, result.ErrorReqParam)
 		return
 	}
 
 	user, err := h.authService.RegisterUser(req.Username, req.Password, req.Email, req.DomainPrefix, req.DomainID, req.InviteCode)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
+		c.JSON(http.StatusBadRequest, result.ErrorSimpleResult(err.Error()))
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": "注册成功",
-		"data": gin.H{
-			"user": gin.H{
-				"id":           user.Id,
-				"username":     user.Username,
-				"email":        user.Email,
-				"contribution": user.Contribution,
-				"invite_code":  user.InviteCode,
-			},
-		},
-	})
+	userData := gin.H{
+		"id":           user.Id,
+		"username":     user.Username,
+		"email":        user.Email,
+		"contribution": user.Contribution,
+		"invite_code":  user.InviteCode,
+	}
+
+	c.JSON(http.StatusOK, result.DataResult("注册成功", gin.H{"user": userData}))
 }
 
 // Logout 用户登出
 func (h *AuthHandler) Logout(c *gin.Context) {
 	session, err := h.sessionStore.Get(c.Request, "miko-session")
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "会话错误"})
+		c.JSON(http.StatusInternalServerError, result.ErrorSimpleResult("会话错误"))
 		return
 	}
 
@@ -175,11 +164,11 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	session.Options.MaxAge = -1
 
 	if err := session.Save(c.Request, c.Writer); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "登出失败"})
+		c.JSON(http.StatusInternalServerError, result.ErrorSimpleResult("登出失败"))
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"success": true, "message": "登出成功"})
+	c.JSON(http.StatusOK, result.SimpleResult("登出成功"))
 }
 
 // GetProfile 获取用户信息
@@ -191,43 +180,41 @@ func (h *AuthHandler) GetProfile(c *gin.Context) {
 		// 管理员用户
 		admin, err := h.svcCtx.AdminModel.GetById(int64(userID))
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "获取管理员信息失败"})
+			c.JSON(http.StatusInternalServerError, result.ErrorSimpleResult("获取管理员信息失败"))
 			return
 		}
 
-		c.JSON(http.StatusOK, gin.H{
-			"success": true,
-			"data": gin.H{
-				"id":           admin.Id,
-				"username":     admin.Username,
-				"email":        admin.Email,
-				"contribution": admin.Contribution,
-				"invite_code":  admin.InviteCode,
-				"is_admin":     true,
-				"created_at":   admin.CreatedAt,
-			},
-		})
+		userData := gin.H{
+			"id":           admin.Id,
+			"username":     admin.Username,
+			"email":        admin.Email,
+			"contribution": admin.Contribution,
+			"invite_code":  admin.InviteCode,
+			"is_admin":     true,
+			"created_at":   admin.CreatedAt,
+		}
+
+		c.JSON(http.StatusOK, result.DataResult("", userData))
 	} else {
 		// 普通用户
 		user, err := h.svcCtx.UserModel.GetById(int64(userID))
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "获取用户信息失败"})
+			c.JSON(http.StatusInternalServerError, result.ErrorSimpleResult("获取用户信息失败"))
 			return
 		}
 
-		c.JSON(http.StatusOK, gin.H{
-			"success": true,
-			"data": gin.H{
-				"id":           user.Id,
-				"username":     user.Username,
-				"email":        user.Email,
-				"contribution": user.Contribution,
-				"invite_code":  user.InviteCode,
-				"invited_by":   user.InvitedBy,
-				"is_admin":     false,
-				"created_at":   user.CreatedAt,
-			},
-		})
+		userData := gin.H{
+			"id":           user.Id,
+			"username":     user.Username,
+			"email":        user.Email,
+			"contribution": user.Contribution,
+			"invite_code":  user.InviteCode,
+			"invited_by":   user.InvitedBy,
+			"is_admin":     false,
+			"created_at":   user.CreatedAt,
+		}
+
+		c.JSON(http.StatusOK, result.DataResult("", userData))
 	}
 }
 
@@ -235,7 +222,7 @@ func (h *AuthHandler) GetProfile(c *gin.Context) {
 func (h *AuthHandler) ChangePassword(c *gin.Context) {
 	var req ChangePasswordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "请求参数错误"})
+		c.JSON(http.StatusBadRequest, result.ErrorReqParam)
 		return
 	}
 
@@ -244,9 +231,9 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 
 	err := h.authService.ChangePassword(userID, req.OldPassword, req.NewPassword, isAdmin)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
+		c.JSON(http.StatusBadRequest, result.ErrorSimpleResult(err.Error()))
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"success": true, "message": "密码修改成功"})
+	c.JSON(http.StatusOK, result.SimpleResult("密码修改成功"))
 }
