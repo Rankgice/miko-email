@@ -1,0 +1,115 @@
+# Miko邮箱系统配置文件
+# 修改此文件后需要重启服务器
+
+# 服务器端口配置
+server:
+  # Web管理界面端口
+  web_port: 8080
+
+  # SMTP服务器端口配置
+  smtp:
+    # 是否启用多SMTP端口
+    enable_multi_port: true
+    # 标准SMTP端口
+    port_25: 25
+    # SMTP提交端口 (推荐用于客户端发送)
+    port_587: 587
+    # SMTPS安全端口 (SSL/TLS)
+    port_465: 465
+
+  # IMAP服务器端口
+  imap:
+    port: 143
+    # IMAPS安全端口 (可选)
+    secure_port: 993
+
+  # POP3服务器端口
+  pop3:
+    port: 110
+    # POP3S安全端口 (可选)
+    secure_port: 995
+
+# 管理员账号配置
+admin:
+  # 管理员用户名
+  username: "kimi11"
+  # 管理员密码 (建议使用强密码)
+  password: "tgx1234561"
+  # 管理员邮箱
+  email: "admin@jbjj.site"
+  # 是否启用管理员账号
+  enabled: true
+
+# 数据库配置
+database:
+  # 数据库文件路径
+  path: "./miko_email.db"
+  # 是否启用数据库日志
+  debug: false
+
+# 域名配置
+domain:
+  # 默认域名
+  default: "localhost"
+  # 允许的域名列表 (空数组表示不限制域名，接受所有域名)
+  allowed: []
+  # 是否启用域名限制 (false表示不限制)
+  enable_domain_restriction: false
+
+# 安全配置
+security:
+  # Session密钥 (生产环境请修改)
+  session_key: "miko-email-secret-key-change-in-production"
+  # JWT密钥
+  jwt_secret: "miko-email-jwt-secret-key"
+  # Session过期时间 (小时)
+  session_timeout: 24
+  # 是否启用HTTPS
+  enable_https: false
+  # SSL证书文件路径 (启用HTTPS时需要)
+  ssl_cert: ""
+  ssl_key: ""
+
+# 邮件配置
+email:
+  # 最大邮件大小 (MB)
+  max_size: 25
+  # 每个用户最大邮箱数量
+  max_mailboxes_per_user: 10
+  # 邮件保留天数 (0表示永久保留)
+  retention_days: 0
+  # 是否启用邮件转发
+  enable_forwarding: true
+
+# 日志配置
+logging:
+  # 日志级别: debug, info, warn, error
+  level: "info"
+  # 是否输出到文件
+  to_file: false
+  # 日志文件路径
+  file_path: "./logs/miko_email.log"
+  # 是否启用访问日志
+  access_log: true
+
+# 性能配置
+performance:
+  # 最大并发连接数
+  max_connections: 1000
+  # 读取超时时间 (秒)
+  read_timeout: 30
+  # 写入超时时间 (秒)
+  write_timeout: 30
+  # 空闲超时时间 (秒)
+  idle_timeout: 120
+
+# 功能开关
+features:
+  # 是否允许用户注册
+  allow_registration: true
+  # 是否启用邮件搜索
+  enable_search: true
+  # 是否启用邮件附件
+  enable_attachments: true
+  # 是否启用垃圾邮件过滤
+  enable_spam_filter: false

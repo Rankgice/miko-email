@@ -1,16 +1,12 @@
 package config
 
 import (
-	"fmt"
-	"io/ioutil"
-	"os"
-	"strconv"
-
 	"gopkg.in/yaml.v3"
+	"log"
+	"os"
 )
 
-// YAMLConfig YAML配置文件结构
-type YAMLConfig struct {
+type YConfig struct {
 	Server struct {
 		WebPort int `yaml:"web_port"`
 		SMTP    struct {
@@ -85,57 +81,26 @@ type YAMLConfig struct {
 	} `yaml:"features"`
 }
 
-// LoadYAMLConfig 加载YAML配置文件
-func LoadYAMLConfig(configPath string) (*YAMLConfig, error) {
-	// 检查配置文件是否存在
-	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		return nil, fmt.Errorf("配置文件不存在: %s", configPath)
-	}
-
-	// 读取配置文件
-	data, err := ioutil.ReadFile(configPath)
+// NewConfig 创建配置
+func NewConfig(path string) YConfig {
+	conf, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("读取配置文件失败: %v", err)
+		log.Fatal("读取配置文件失败：", err)
 	}
-
-	// 解析YAML
-	var config YAMLConfig
-	if err := yaml.Unmarshal(data, &config); err != nil {
-		return nil, fmt.Errorf("解析YAML配置失败: %v", err)
+	var c YConfig
+	if err := yaml.Unmarshal(conf, &c); err != nil {
+		log.Fatal("解析配置文件失败：", err)
 	}
-
-	return &config, nil
+	return c
 }
 
-// ToConfig 将YAML配置转换为原有的Config结构
-func (yc *YAMLConfig) ToConfig() *Config {
-	return &Config{
-		WebPort:         strconv.Itoa(yc.Server.WebPort),
-		SMTPPort:        strconv.Itoa(yc.Server.SMTP.Port25),
-		SMTPPort587:     strconv.Itoa(yc.Server.SMTP.Port587),
-		SMTPPort465:     strconv.Itoa(yc.Server.SMTP.Port465),
-		IMAPPort:        strconv.Itoa(yc.Server.IMAP.Port),
-		POP3Port:        strconv.Itoa(yc.Server.POP3.Port),
-		DatabasePath:    yc.Database.Path,
-		SessionKey:      yc.Security.SessionKey,
-		Domain:          yc.Domain.Default,
-		EnableMultiSMTP: yc.Server.SMTP.EnableMultiPort,
-	}
-}
-
-// GetAdminCredentials 获取管理员凭据
-func (yc *YAMLConfig) GetAdminCredentials() (username, password, email string, enabled bool) {
-	return yc.Admin.Username, yc.Admin.Password, yc.Admin.Email, yc.Admin.Enabled
-}
-
-// GetSMTPPorts 获取SMTP端口列表
-func (yc *YAMLConfig) GetSMTPPorts() []string {
-	if yc.Server.SMTP.EnableMultiPort {
-		return []string{
-			strconv.Itoa(yc.Server.SMTP.Port25),
-			strconv.Itoa(yc.Server.SMTP.Port587),
-			strconv.Itoa(yc.Server.SMTP.Port465),
-		}
-	}
-	return []string{strconv.Itoa(yc.Server.SMTP.Port25)}
-}
+//		WebPort:         getEnv("WEB_PORT", "8080"),
+//		SMTPPort:        getEnv("SMTP_PORT", "25"),
+//		SMTPPort587:     getEnv("SMTP_PORT_587", "587"), // SMTP提交端口
+//		SMTPPort465:     getEnv("SMTP_PORT_465", "465"), // SMTPS端口
+//		IMAPPort:        getEnv("IMAP_PORT", "143"),
+//		POP3Port:        getEnv("POP3_PORT", "110"),
+//		DatabasePath:    getEnv("DATABASE_PATH", "./miko_email.db"),
+//		SessionKey:      getEnv("SESSION_KEY", "miko-email-secret-key-change-in-production"),
+//		Domain:          getEnv("DOMAIN", "localhost"),
+//		EnableMultiSMTP: getEnvBool("ENABLE_MULTI_SMTP", true), // 默认启用多SMTP端口

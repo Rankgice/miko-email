@@ -1,6 +1,7 @@
 package svc
 
 import (
+	"errors"
 	"fmt"
 	"golang.org/x/crypto/bcrypt"
 	"log"
@@ -87,7 +88,7 @@ func createDefaultAdmin(adminModel *model.AdminModel) error {
 
 	// 检查是否已存在该用户名的管理员
 	existingAdmin, err := adminModel.GetByUsername(username)
-	if err != nil && err != gorm.ErrRecordNotFound {
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return fmt.Errorf("检查管理员是否存在失败: %w", err)
 	}
 
