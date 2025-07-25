@@ -3,11 +3,17 @@ package email
 import (
 	"bufio"
 	"bytes"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
 	"log"
+	"math/big"
 	"mime/quotedprintable"
 	"net"
 	"regexp"
@@ -111,7 +117,18 @@ func NewService(svcCtx *svc.ServiceContext) *Service {
 func (s *Service) StartSMTPServer(port string) error {
 	log.Printf("SMTP server starting on port %s", port)
 
-	// 简单的SMTP服务器实现
+	// 根据端口决定是否使用SSL
+	if port == "465" {
+		return s.startSMTPSServer(port)
+	} else if port == "587" {
+		return s.startSMTPWithSTARTTLS(port)
+	} else {
+		return s.startPlainSMTPServer(port)
+	}
+}
+
+// startPlainSMTPServer 启动普通SMTP服务器（25端口）
+func (s *Service) startPlainSMTPServer(port string) error {
 	listener, err := net.Listen("tcp", ":"+port)
 	if err != nil {
 		return fmt.Errorf("failed to start SMTP server: %w", err)
@@ -127,8 +144,104 @@ func (s *Service) StartSMTPServer(port string) error {
 			continue
 		}
 
-		go s.handleSMTPConnection(conn)
+		go s.handleSMTPConnection(conn, false)
 	}
+}
+
+// startSMTPSServer 启动SMTPS服务器（465端口，SSL）
+func (s *Service) startSMTPSServer(port string) error {
+	// 创建自签名证书（生产环境应使用真实证书）
+	cert, err := s.generateSelfSignedCert()
+	if err != nil {
+		log.Printf("警告：无法生成SSL证书，465端口将使用普通连接: %v", err)
+		return s.startPlainSMTPServer(port)
+	}
+
+	tlsConfig := &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		ServerName:   "localhost",
+	}
+
+	listener, err := tls.Listen("tcp", ":"+port, tlsConfig)
+	if err != nil {
+		return fmt.Errorf("failed to start SMTPS server: %w", err)
+	}
+	defer listener.Close()
+
+	log.Printf("SMTPS server listening on port %s (SSL)", port)
+
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			log.Printf("SMTPS connection error: %v", err)
+			continue
+		}
+
+		go s.handleSMTPConnection(conn, true)
+	}
+}
+
+// startSMTPWithSTARTTLS 启动支持STARTTLS的SMTP服务器（587端口）
+func (s *Service) startSMTPWithSTARTTLS(port string) error {
+	listener, err := net.Listen("tcp", ":"+port)
+	if err != nil {
+		return fmt.Errorf("failed to start SMTP server: %w", err)
+	}
+	defer listener.Close()
+
+	log.Printf("SMTP server listening on port %s (STARTTLS)", port)
+
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			log.Printf("SMTP connection error: %v", err)
+			continue
+		}
+
+		go s.handleSMTPConnection(conn, false)
+	}
+}
+
+// generateSelfSignedCert 生成自签名证书
+func (s *Service) generateSelfSignedCert() (tls.Certificate, error) {
+	// 生成私钥
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+
+	// 创建证书模板
+	template := x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject: pkix.Name{
+			Organization:  []string{"Miko Email System"},
+			Country:       []string{"CN"},
+			Province:      []string{""},
+			Locality:      []string{""},
+			StreetAddress: []string{""},
+			PostalCode:    []string{""},
+		},
+		NotBefore:   time.Now(),
+		NotAfter:    time.Now().Add(365 * 24 * time.Hour), // 1年有效期
+		KeyUsage:    x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		IPAddresses: []net.IP{net.IPv4(127, 0, 0, 1), net.IPv6loopback},
+		DNSNames:    []string{"localhost", "jbjj.site", "*.jbjj.site"},
+	}
+
+	// 生成证书
+	certDER, err := x509.CreateCertificate(rand.Reader, &template, &template, &priv.PublicKey, priv)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+
+	// 创建TLS证书
+	cert := tls.Certificate{
+		Certificate: [][]byte{certDER},
+		PrivateKey:  priv,
+	}
+
+	return cert, nil
 }
 
 // StartIMAPServer 启动IMAP服务器
@@ -178,7 +291,7 @@ func (s *Service) StartPOP3Server(port string) error {
 }
 
 // handleSMTPConnection 处理SMTP连接
-func (s *Service) handleSMTPConnection(conn net.Conn) {
+func (s *Service) handleSMTPConnection(conn net.Conn, isSSL bool) {
 	defer conn.Close()
 
 	// 获取客户端IP
@@ -206,6 +319,7 @@ func (s *Service) handleSMTPConnection(conn net.Conn) {
 		reader: reader,
 		writer: writer,
 		server: s,
+		isSSL:  isSSL,
 	}
 
 	session.handle()
@@ -255,6 +369,8 @@ type SMTPSession struct {
 	username      string
 	password      string
 	authenticated bool
+	tlsEnabled    bool
+	isSSL         bool
 }
 
 // handle 处理SMTP会话
@@ -282,7 +398,9 @@ func (session *SMTPSession) handle() {
 
 		switch command {
 		case "HELO", "EHLO":
-			session.handleHelo(args)
+			session.handleHelo(args, command)
+		case "STARTTLS":
+			session.handleStartTLS()
 		case "AUTH":
 			session.handleAuth(args)
 		case "MAIL":
@@ -320,14 +438,72 @@ func (session *SMTPSession) writeResponse(code int, message string) error {
 }
 
 // handleHelo 处理HELO/EHLO命令
-func (session *SMTPSession) handleHelo(args string) {
+func (session *SMTPSession) handleHelo(args string, command string) {
 	session.helo = args
 	log.Printf("SMTP握手: %s (来自 %s)", args, session.conn.RemoteAddr())
-	// 简单的EHLO响应，支持AUTH扩展
-	session.writer.WriteString("250-Hello " + args + "\r\n")
-	session.writer.WriteString("250-AUTH PLAIN LOGIN\r\n")
-	session.writer.WriteString("250 8BITMIME\r\n")
+
+	if command == "EHLO" {
+		// EHLO响应，支持扩展
+		session.writer.WriteString("250-Hello " + args + "\r\n")
+
+		// 如果不是SSL连接且不是已经启用TLS，则广告STARTTLS
+		if !session.isSSL && !session.tlsEnabled {
+			session.writer.WriteString("250-STARTTLS\r\n")
+		}
+
+		session.writer.WriteString("250-AUTH PLAIN LOGIN\r\n")
+		session.writer.WriteString("250 8BITMIME\r\n")
+	} else {
+		// HELO响应，简单模式
+		session.writer.WriteString("250 Hello " + args + "\r\n")
+	}
+
 	session.writer.Flush()
+}
+
+// handleStartTLS 处理STARTTLS命令
+func (session *SMTPSession) handleStartTLS() {
+	if session.isSSL || session.tlsEnabled {
+		session.writeResponse(503, "TLS already active")
+		return
+	}
+
+	// 生成自签名证书
+	cert, err := session.server.generateSelfSignedCert()
+	if err != nil {
+		log.Printf("生成TLS证书失败: %v", err)
+		session.writeResponse(454, "TLS not available due to temporary reason")
+		return
+	}
+
+	// 发送准备开始TLS的响应
+	session.writeResponse(220, "Ready to start TLS")
+
+	// 创建TLS配置
+	tlsConfig := &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		ServerName:   "localhost",
+	}
+
+	// 将连接升级为TLS
+	tlsConn := tls.Server(session.conn, tlsConfig)
+	err = tlsConn.Handshake()
+	if err != nil {
+		log.Printf("TLS握手失败: %v", err)
+		return
+	}
+
+	log.Printf("TLS连接建立成功: %s", session.conn.RemoteAddr())
+
+	// 更新会话连接和读写器
+	session.conn = tlsConn
+	session.reader = bufio.NewReader(tlsConn)
+	session.writer = bufio.NewWriter(tlsConn)
+	session.tlsEnabled = true
+
+	// 重置会话状态（TLS后需要重新认证）
+	session.authenticated = false
+	session.helo = ""
 }
 
 // IMAPSession IMAP会话
@@ -2000,35 +2176,4 @@ func (session *SMTPSession) parseEmailWithEnmime(rawEmail string) (subject, body
 	}
 
 	return subject, body
-}
-
-// cleanText 清理文本内容
-func cleanText(text string) string {
-	// 移除UTF-8 BOM字符
-	text = strings.ReplaceAll(text, string('\uFEFF'), " ")
-
-	// 规范化空白字符
-	text = regexp.MustCompile(`\s+`).ReplaceAllString(text, " ")
-
-	// 移除首尾空白
-	text = strings.TrimSpace(text)
-
-	return text
-}
-
-// stripHTMLTags 简单的HTML标签移除
-func stripHTMLTags(html string) string {
-	// 移除HTML标签
-	re := regexp.MustCompile(`<[^>]*>`)
-	text := re.ReplaceAllString(html, " ")
-
-	// 解码HTML实体
-	text = strings.ReplaceAll(text, "&nbsp;", " ")
-	text = strings.ReplaceAll(text, "&amp;", "&")
-	text = strings.ReplaceAll(text, "&lt;", "<")
-	text = strings.ReplaceAll(text, "&gt;", ">")
-	text = strings.ReplaceAll(text, "&quot;", "\"")
-	text = strings.ReplaceAll(text, "&#39;", "'")
-
-	return text
 }
