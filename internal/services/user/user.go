@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"miko-email/internal/models"
+	"time"
 
 	"gorm.io/gorm"
 	"miko-email/internal/model"
@@ -21,10 +21,19 @@ func NewService(svcCtx *svc.ServiceContext) *Service {
 
 // UserWithStats 用户统计信息
 type UserWithStats struct {
-	models.User
-	MailboxCount int    `json:"mailbox_count"`
-	Status       string `json:"status"`
-	InviterName  string `json:"inviter_name"`
+	ID           int64     `json:"id" db:"id"`
+	Username     string    `json:"username" db:"username"`
+	Password     string    `json:"-" db:"password"` // 不在JSON中显示密码
+	Email        string    `json:"email" db:"email"`
+	IsActive     bool      `json:"is_active" db:"is_active"`
+	Contribution int       `json:"contribution" db:"contribution"` // 贡献度
+	InviteCode   string    `json:"invite_code" db:"invite_code"`   // 邀请码
+	InvitedBy    *int64    `json:"invited_by" db:"invited_by"`     // 被谁邀请
+	CreatedAt    time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at" db:"updated_at"`
+	MailboxCount int       `json:"mailbox_count"`
+	Status       string    `json:"status"`
+	InviterName  string    `json:"inviter_name"`
 }
 
 // GetUsers 获取用户列表
