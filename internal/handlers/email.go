@@ -6,16 +6,13 @@ import (
 	"log"
 	"miko-email/internal/svc"
 	"mime"
-	"net"
 	"net/http"
-	"net/smtp"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
-	"miko-email/internal/config"
 	"miko-email/internal/model"
 	"miko-email/internal/services/email"
 	"miko-email/internal/services/forward"
@@ -796,89 +793,6 @@ func (h *EmailHandler) buildMIMEMessage(from, to, subject, body string, attachme
 	message.WriteString(fmt.Sprintf("--%s--\r\n", boundary))
 
 	return message.String()
-}
-
-// sendThroughLocalSMTP 通过本地SMTP服务器发送邮件
-func (h *EmailHandler) sendThroughLocalSMTP(from, to, subject, body string) error {
-	// 获取配置
-	cfg := config.Load()
-
-	// 构建邮件内容
-	message := h.buildEmailMessage(from, to, subject, body)
-
-	// 获取本地SMTP端口（优先使用587端口）
-	smtpPorts := cfg.GetSMTPPorts()
-	var port string
-	for _, p := range smtpPorts {
-		if p == "587" {
-			port = p
-			break
-		}
-	}
-	if port == "" && len(smtpPorts) > 0 {
-		port = smtpPorts[0] // 使用第一个可用端口
-	}
-	if port == "" {
-		port = "25" // 默认端口
-	}
-
-	// 连接到本地SMTP服务器
-	addr := fmt.Sprintf("localhost:%s", port)
-
-	// 设置连接超时
-	conn, err := net.DialTimeout("tcp", addr, 10*time.Second)
-	if err != nil {
-		return fmt.Errorf("连接本地SMTP服务器失败: %v", err)
-	}
-	defer conn.Close()
-
-	// 创建SMTP客户端
-	client, err := smtp.NewClient(conn, "localhost")
-	if err != nil {
-		return fmt.Errorf("创建SMTP客户端失败: %v", err)
-	}
-	defer client.Close()
-
-	// 设置发件人
-	if err = client.Mail(from); err != nil {
-		return fmt.Errorf("设置发件人失败: %v", err)
-	}
-
-	// 设置收件人
-	if err = client.Rcpt(to); err != nil {
-		return fmt.Errorf("设置收件人失败: %v", err)
-	}
-
-	// 发送邮件内容
-	wc, err := client.Data()
-	if err != nil {
-		return fmt.Errorf("开始发送邮件内容失败: %v", err)
-	}
-	defer wc.Close()
-
-	_, err = wc.Write(message)
-	if err != nil {
-		return fmt.Errorf("写入邮件内容失败: %v", err)
-	}
-
-	log.Printf("✅ 通过本地SMTP发送成功: %s -> %s", from, to)
-	return nil
-}
-
-// buildEmailMessage 构建邮件消息
-func (h *EmailHandler) buildEmailMessage(from, to, subject, body string) []byte {
-	// 构建标准的邮件格式
-	message := fmt.Sprintf("From: %s\r\n", from)
-	message += fmt.Sprintf("To: %s\r\n", to)
-	message += fmt.Sprintf("Subject: %s\r\n", subject)
-	message += "MIME-Version: 1.0\r\n"
-	message += "Content-Type: text/plain; charset=UTF-8\r\n"
-	message += "Content-Transfer-Encoding: 8bit\r\n"
-	message += fmt.Sprintf("Date: %s\r\n", time.Now().Format(time.RFC1123Z))
-	message += "\r\n"
-	message += body
-
-	return []byte(message)
 }
 
 // GetVerificationCode 获取邮件验证码
