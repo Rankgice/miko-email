@@ -79,7 +79,7 @@ func (s *Server) setupRoutes(svcCtx *svc.ServiceContext) {
 	userService := user.NewService(svcCtx)
 
 	// 创建处理器实例
-	authHandler := handlers.NewAuthHandler(authService, s.sessionStore, s.db, svcCtx)
+	authHandler := handlers.NewAuthHandler(authService, s.sessionStore, svcCtx)
 	mailboxHandler := handlers.NewMailboxHandler(mailboxService, s.sessionStore, svcCtx)
 	domainHandler := handlers.NewDomainHandler(domainService, s.sessionStore, svcCtx)
 	userHandler := handlers.NewUserHandler(userService, s.sessionStore, svcCtx)
