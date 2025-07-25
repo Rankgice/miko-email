@@ -242,19 +242,6 @@ func (s *Service) GetDNSRecords(domain string) map[string][]string {
 	return records
 }
 
-// GetDomainByID 根据ID获取域名
-func (s *Service) GetDomainByID(domainID int64) (*model.Domain, error) {
-	domain, err := s.svcCtx.DomainModel.GetById(domainID)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, fmt.Errorf("域名不存在")
-		}
-		return nil, err
-	}
-
-	return domain, nil
-}
-
 // UpdateDomain 更新域名信息
 func (s *Service) UpdateDomain(domainID int64, mxRecord, aRecord, txtRecord string) error {
 	return s.svcCtx.DomainModel.UpdateDNSRecords(nil, domainID, mxRecord, aRecord, txtRecord)

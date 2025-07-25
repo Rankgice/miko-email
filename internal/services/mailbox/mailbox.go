@@ -94,58 +94,6 @@ func (s *Service) GetUserMailboxesRaw(userID int64, isAdmin bool) ([]*model.Mail
 	return mailboxes, nil
 }
 
-// CreateMailbox 创建邮箱
-func (s *Service) CreateMailbox(userID int64, prefix string, domainID int64, isAdmin bool) (*model.Mailbox, error) {
-	// 获取域名
-	domain, err := s.svcCtx.DomainModel.GetById(domainID)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, fmt.Errorf("域名不存在或已禁用")
-		}
-		return nil, err
-	}
-
-	if !domain.IsActive {
-		return nil, fmt.Errorf("域名不存在或已禁用")
-	}
-
-	fullEmail := fmt.Sprintf("%s@%s", prefix, domain.Name)
-
-	// 检查邮箱是否已存在
-	exists, err := s.svcCtx.MailboxModel.CheckEmailExist(fullEmail)
-	if err != nil {
-		return nil, err
-	}
-	if exists {
-		return nil, fmt.Errorf("邮箱已存在")
-	}
-
-	// 生成邮箱密码
-	password := uuid.New().String()[:8]
-
-	// 创建邮箱
-	mailbox := &model.Mailbox{
-		Email:     fullEmail,
-		Password:  password,
-		DomainId:  domainID,
-		IsActive:  true,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-	}
-
-	if isAdmin {
-		mailbox.AdminId = &userID
-	} else {
-		mailbox.UserId = &userID
-	}
-
-	if err := s.svcCtx.MailboxModel.Create(nil, mailbox); err != nil {
-		return nil, err
-	}
-
-	return mailbox, nil
-}
-
 // CreateMailboxWithPassword 创建邮箱（使用自定义密码）
 func (s *Service) CreateMailboxWithPassword(userID int64, prefix string, password string, domainID int64, isAdmin bool) (*model.Mailbox, error) {
 	// 获取域名
@@ -268,23 +216,6 @@ func (s *Service) BatchCreateMailboxes(userID int64, prefixes []string, domainID
 // GetMailboxByEmail 根据邮箱地址获取邮箱信息
 func (s *Service) GetMailboxByEmail(email string) (*model.Mailbox, error) {
 	mailbox, err := s.svcCtx.MailboxModel.GetByEmail(email)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, fmt.Errorf("邮箱不存在")
-		}
-		return nil, err
-	}
-
-	if !mailbox.IsActive {
-		return nil, fmt.Errorf("邮箱不存在")
-	}
-
-	return mailbox, nil
-}
-
-// GetMailboxByID 根据ID获取邮箱信息
-func (s *Service) GetMailboxByID(mailboxID int64) (*model.Mailbox, error) {
-	mailbox, err := s.svcCtx.MailboxModel.GetById(mailboxID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, fmt.Errorf("邮箱不存在")

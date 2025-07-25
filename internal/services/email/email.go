@@ -1676,27 +1676,6 @@ func (session *SMTPSession) saveEmail() error {
 	return nil
 }
 
-// saveToLocalDatabase 直接保存到本地数据库（备用方法）
-func (session *SMTPSession) saveToLocalDatabase(to, subject, body string) {
-	mailboxID, err := session.server.svcCtx.MailboxModel.GetIdByEmail(to)
-	if err != nil {
-		log.Printf("获取邮箱ID失败: %v", err)
-		return
-	}
-
-	// 插入邮件记录
-	err = session.server.svcCtx.EmailModel.SaveEmailToFolder(nil, mailboxID, session.from, to, subject, body, "inbox")
-	if err != nil {
-		log.Printf("备用保存失败: %v", err)
-		return
-	}
-
-	log.Printf("✅ 备用保存成功 - 邮箱ID: %d, 主题: %s", mailboxID, subject)
-
-	// 检查并执行转发规则
-	session.server.processForwardRules(to, session.from, subject, body)
-}
-
 // SaveEmailToSent 保存邮件到已发送文件夹
 func (s *Service) SaveEmailToSent(mailboxID int64, fromAddr, toAddr, subject, body string) error {
 	return s.svcCtx.EmailModel.SaveEmailToFolder(nil, mailboxID, fromAddr, toAddr, subject, body, "sent")
@@ -1769,11 +1748,6 @@ func (session *SMTPSession) parseEmailContent() (subject, body string) {
 	}
 
 	return subject, body
-}
-
-// ProcessForwardRules 处理邮件转发规则（公开方法）
-func (s *Service) ProcessForwardRules(sourceEmail, fromAddr, subject, body string) {
-	s.processForwardRules(sourceEmail, fromAddr, subject, body)
 }
 
 // processForwardRules 处理邮件转发规则
@@ -1930,16 +1904,6 @@ func decodeQuotedPrintableHeaderSMTP(s string) string {
 	return result.String()
 }
 
-// 简化的字符集提取函数（仅用于备用解析）
-func extractCharsetFromContentType(contentType string) string {
-	re := regexp.MustCompile(`charset\s*=\s*["']?([^"'\s;]+)["']?`)
-	matches := re.FindStringSubmatch(contentType)
-	if len(matches) > 1 {
-		return matches[1]
-	}
-	return "utf-8"
-}
-
 // getEncodingByCharset 根据字符集名称获取编码器
 func getEncodingByCharset(charset string) encoding.Encoding {
 	charset = strings.ToLower(strings.TrimSpace(charset))
@@ -2045,40 +2009,6 @@ func decodeQuotedPrintableFallback(s string) string {
 	}
 
 	return result.String()
-}
-
-// isBase64Content 检测内容是否为Base64编码
-func isBase64Content(content string) bool {
-	// 移除空白字符
-	content = strings.ReplaceAll(content, "\n", "")
-	content = strings.ReplaceAll(content, "\r", "")
-	content = strings.ReplaceAll(content, " ", "")
-	content = strings.TrimSpace(content)
-
-	// Base64内容特征：
-	// 1. 只包含A-Z, a-z, 0-9, +, /, =
-	// 2. 长度是4的倍数（padding后）
-	// 3. 只有末尾可能有=号
-
-	if len(content) == 0 || len(content)%4 != 0 {
-		return false
-	}
-
-	// 检查字符是否都是Base64字符
-	for i, char := range content {
-		if !((char >= 'A' && char <= 'Z') ||
-			(char >= 'a' && char <= 'z') ||
-			(char >= '0' && char <= '9') ||
-			char == '+' || char == '/') {
-			// =号只能出现在末尾
-			if char == '=' && i >= len(content)-2 {
-				continue
-			}
-			return false
-		}
-	}
-
-	return true
 }
 
 // GetEmails 获取邮件列表
