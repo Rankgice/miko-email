@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"miko-email/internal/model"
 	"miko-email/internal/result"
 	"miko-email/internal/services/dkim"
 	"miko-email/internal/services/domain"
@@ -79,7 +80,7 @@ func (h *DomainHandler) CreateDomain(c *gin.Context) {
 		return
 	}
 
-	var domain *models.Domain
+	var domain *model.Domain
 	var err error
 
 	// 如果有额外的DNS记录，使用完整版本的创建函数
@@ -133,7 +134,7 @@ func (h *DomainHandler) UpdateDomain(c *gin.Context) {
 // VerifySenderConfiguration 验证发件配置
 func (h *DomainHandler) VerifySenderConfiguration(c *gin.Context) {
 	domainIDStr := c.Param("id")
-	domainID, err := strconv.Atoi(domainIDStr)
+	domainID, err := strconv.ParseInt(domainIDStr, 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "域名ID格式错误"})
 		return
@@ -155,7 +156,7 @@ func (h *DomainHandler) VerifySenderConfiguration(c *gin.Context) {
 // VerifyReceiverConfiguration 验证收件配置
 func (h *DomainHandler) VerifyReceiverConfiguration(c *gin.Context) {
 	domainIDStr := c.Param("id")
-	domainID, err := strconv.Atoi(domainIDStr)
+	domainID, err := strconv.ParseInt(domainIDStr, 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "域名ID格式错误"})
 		return

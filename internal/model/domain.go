@@ -1,6 +1,7 @@
 package model
 
 import (
+	"errors"
 	"time"
 
 	"gorm.io/gorm"
@@ -279,4 +280,86 @@ func (m *DomainModel) GetDomainsByStatus(isActive, isVerified bool) ([]*Domain, 
 	var domains []*Domain
 	err := m.db.Where("is_active = ? AND is_verified = ?", isActive, isVerified).Find(&domains).Error
 	return domains, err
+}
+
+// UpdateSenderVerificationStatus 更新发件验证状态
+func (m *DomainModel) UpdateSenderVerificationStatus(tx *gorm.DB, id int64, status string) error {
+	db := m.db
+	if tx != nil {
+		db = tx
+	}
+	return db.Model(&Domain{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"sender_verification_status": status,
+		"updated_at":                 time.Now(),
+	}).Error
+}
+
+// UpdateReceiverVerificationStatus 更新收件验证状态
+func (m *DomainModel) UpdateReceiverVerificationStatus(tx *gorm.DB, id int64, status string) error {
+	db := m.db
+	if tx != nil {
+		db = tx
+	}
+	return db.Model(&Domain{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"receiver_verification_status": status,
+		"updated_at":                   time.Now(),
+	}).Error
+}
+
+// UpdateAllDNSRecords 更新所有DNS记录
+func (m *DomainModel) UpdateAllDNSRecords(tx *gorm.DB, id int64, mxRecord, aRecord, txtRecord, spfRecord, dmarcRecord, dkimRecord, ptrRecord string) error {
+	db := m.db
+	if tx != nil {
+		db = tx
+	}
+	return db.Model(&Domain{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"mx_record":    mxRecord,
+		"a_record":     aRecord,
+		"txt_record":   txtRecord,
+		"spf_record":   spfRecord,
+		"dmarc_record": dmarcRecord,
+		"dkim_record":  dkimRecord,
+		"ptr_record":   ptrRecord,
+		"updated_at":   time.Now(),
+	}).Error
+}
+
+// CreateWithAllRecords 创建包含所有DNS记录的域名
+func (m *DomainModel) CreateWithAllRecords(tx *gorm.DB, domain *Domain) error {
+	db := m.db
+	if tx != nil {
+		db = tx
+	}
+	return db.Create(domain).Error
+}
+
+// CheckActiveDomainExists 检查活跃域名是否存在
+func (m *DomainModel) CheckActiveDomainExists(name string) (bool, error) {
+	var count int64
+	err := m.db.Model(&Domain{}).
+		Where("name = ? AND is_active = ?", name, true).
+		Count(&count).Error
+
+	if err != nil {
+		return false, err
+	}
+
+	return count > 0, nil
+}
+
+// GetFirstActiveDomain 获取第一个活跃域名（排除localhost）
+func (m *DomainModel) GetFirstActiveDomain() (string, error) {
+	var domain Domain
+	err := m.db.Where("is_active = ? AND name != ?", true, "localhost").
+		Order("id").
+		First(&domain).Error
+
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", nil // 没有找到活跃域名，返回空字符串
+		}
+		return "", err
+	}
+
+	return domain.Name, nil
 }

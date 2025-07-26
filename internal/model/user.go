@@ -259,3 +259,65 @@ func (m *UserModel) HardDelete(tx *gorm.DB, id int64) error {
 	}
 	return db.Unscoped().Where("id = ?", id).Delete(&User{}).Error
 }
+
+// UserWithStats 用户统计信息结构体
+type UserWithStats struct {
+	ID           int64     `json:"id"`
+	Username     string    `json:"username"`
+	Password     string    `json:"-"` // 不在JSON中显示密码
+	Email        string    `json:"email"`
+	IsActive     bool      `json:"is_active"`
+	Contribution int       `json:"contribution"`
+	InviteCode   string    `json:"invite_code"`
+	InvitedBy    *int64    `json:"invited_by"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	MailboxCount int       `json:"mailbox_count"`
+	InviterName  string    `json:"inviter_name"`
+}
+
+// GetUsersWithStats 获取用户列表（包含统计信息）
+func (m *UserModel) GetUsersWithStats() ([]UserWithStats, error) {
+	var users []UserWithStats
+
+	err := m.db.Table("user u").
+		Select(`u.id, u.username, u.email, u.is_active, u.contribution,
+				u.invite_code, u.invited_by, u.created_at, u.updated_at,
+				COUNT(m.id) as mailbox_count,
+				COALESCE(inviter.username, admin_inviter.username, '') as inviter_name`).
+		Joins("LEFT JOIN mailbox m ON u.id = m.user_id AND m.is_active = 1").
+		Joins("LEFT JOIN user inviter ON u.invited_by = inviter.id").
+		Joins("LEFT JOIN admin admin_inviter ON u.invited_by = admin_inviter.id").
+		Group(`u.id, u.username, u.email, u.is_active, u.contribution,
+			   u.invite_code, u.invited_by, u.created_at, u.updated_at,
+			   inviter.username, admin_inviter.username`).
+		Order("u.created_at DESC").
+		Find(&users).Error
+
+	return users, err
+}
+
+// GetUserWithStatsByID 根据ID获取用户（包含统计信息）
+func (m *UserModel) GetUserWithStatsByID(userID int64) (*UserWithStats, error) {
+	var user UserWithStats
+
+	err := m.db.Table("user u").
+		Select(`u.id, u.username, u.email, u.is_active, u.contribution,
+				u.invite_code, u.invited_by, u.created_at, u.updated_at,
+				COUNT(m.id) as mailbox_count,
+				COALESCE(inviter.username, admin_inviter.username, '') as inviter_name`).
+		Joins("LEFT JOIN mailbox m ON u.id = m.user_id AND m.is_active = 1").
+		Joins("LEFT JOIN user inviter ON u.invited_by = inviter.id").
+		Joins("LEFT JOIN admin admin_inviter ON u.invited_by = admin_inviter.id").
+		Where("u.id = ?", userID).
+		Group(`u.id, u.username, u.email, u.is_active, u.contribution,
+			   u.invite_code, u.invited_by, u.created_at, u.updated_at,
+			   inviter.username, admin_inviter.username`).
+		First(&user).Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &user, nil
+}

@@ -45,7 +45,7 @@ func NewEmailHandler(emailService *email.Service, mailboxService *mailbox.Servic
 		mailboxService: mailboxService,
 		forwardService: forwardService,
 		sessionStore:   sessionStore,
-		smtpClient:     smtpService.NewOutboundClientWithDB(sqlDB), // 使用数据库动态获取域名
+		smtpClient:     smtpService.NewOutboundClientWithDB(sqlDB, svcCtx), // 使用数据库动态获取域名
 		svcCtx:         svcCtx,
 	}
 }

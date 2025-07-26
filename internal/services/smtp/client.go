@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"miko-email/internal/services/dkim"
+	"miko-email/internal/svc"
 	"net"
 	"net/smtp"
 	"regexp"
@@ -15,9 +16,10 @@ import (
 
 // OutboundClient MX直接发送客户端
 type OutboundClient struct {
-	domain      string        // 本地域名（兼容性保留）
-	db          *sql.DB       // 数据库连接，用于动态获取域名
-	dkimService *dkim.Service // DKIM签名服务
+	domain      string              // 本地域名（兼容性保留）
+	db          *sql.DB             // 数据库连接，用于动态获取域名（兼容性保留）
+	svcCtx      *svc.ServiceContext // 服务上下文（推荐使用）
+	dkimService *dkim.Service       // DKIM签名服务
 }
 
 // NewOutboundClient 创建MX发送客户端（兼容性保留）
@@ -27,10 +29,19 @@ func NewOutboundClient(domain string) *OutboundClient {
 	}
 }
 
-// NewOutboundClientWithDB 创建支持多域名的MX发送客户端
-func NewOutboundClientWithDB(db *sql.DB) *OutboundClient {
+// NewOutboundClientWithDB 创建支持多域名的MX发送客户端（兼容性保留）
+func NewOutboundClientWithDB(db *sql.DB, svcCtx *svc.ServiceContext) *OutboundClient {
 	return &OutboundClient{
 		db:          db,
+		dkimService: dkim.NewService("./dkim_keys"),
+		svcCtx:      svcCtx,
+	}
+}
+
+// NewOutboundClientWithSvcCtx 创建支持多域名的MX发送客户端（推荐使用）
+func NewOutboundClientWithSvcCtx(svcCtx *svc.ServiceContext) *OutboundClient {
+	return &OutboundClient{
+		svcCtx:      svcCtx,
 		dkimService: dkim.NewService("./dkim_keys"),
 	}
 }
@@ -242,8 +253,14 @@ func (c *OutboundClient) buildMessage(from, to, subject, body string) []byte {
 
 // isLocalEmail 检查是否为本地域名邮箱
 func (c *OutboundClient) isLocalEmail(email string) bool {
-	// 首先检查是否为系统中存在的邮箱
-	if c.db != nil {
+	// 优先使用svcCtx
+	if c.svcCtx != nil {
+		exists, err := c.svcCtx.MailboxModel.CheckActiveMailboxExists(email)
+		if err == nil && exists {
+			return true
+		}
+	} else if c.db != nil {
+		// 兼容性：使用原生SQL
 		var count int
 		err := c.db.QueryRow("SELECT COUNT(*) FROM mailboxes WHERE email = ? AND is_active = 1", email).Scan(&count)
 		if err == nil && count > 0 {
@@ -258,17 +275,17 @@ func (c *OutboundClient) isLocalEmail(email string) bool {
 
 // isLocalDomain 检查是否为本地域名
 func (c *OutboundClient) isLocalDomain(domain string) bool {
-	// 如果有数据库连接，从数据库查询所有活跃域名
-	if c.db != nil {
-		var count int
-		err := c.db.QueryRow("SELECT COUNT(*) FROM domains WHERE name = ? AND is_active = 1", domain).Scan(&count)
-		if err == nil && count > 0 {
+	// 如果有svcCtx，使用model方法查询
+	if c.svcCtx != nil {
+		// 检查domains表中是否有活跃域名
+		exists, err := c.svcCtx.DomainModel.CheckActiveDomainExists(domain)
+		if err == nil && exists {
 			return true
 		}
 
 		// 如果domains表中没有记录，检查是否有该域名的邮箱
-		err = c.db.QueryRow("SELECT COUNT(*) FROM mailboxes WHERE email LIKE ? AND is_active = 1", "%@"+domain).Scan(&count)
-		if err == nil && count > 0 {
+		exists, err = c.svcCtx.MailboxModel.CheckActiveMailboxExistsByDomain(domain)
+		if err == nil && exists {
 			return true
 		}
 	}
@@ -323,8 +340,14 @@ func (c *OutboundClient) sendToLocalMX(from, to, subject, body string) error {
 func (c *OutboundClient) getDomainForSender(senderDomain string) string {
 	// 如果发件人域名不为空且不是localhost，直接使用发件人域名
 	if senderDomain != "" && senderDomain != "localhost" {
-		// 如果有数据库连接，验证该域名是否在系统中配置
-		if c.db != nil {
+		// 优先使用svcCtx验证该域名是否在系统中配置
+		if c.svcCtx != nil {
+			exists, err := c.svcCtx.DomainModel.CheckActiveDomainExists(senderDomain)
+			if err == nil && exists {
+				return senderDomain
+			}
+		} else if c.db != nil {
+			// 兼容性：使用原生SQL
 			var count int
 			err := c.db.QueryRow("SELECT COUNT(*) FROM domains WHERE name = ? AND is_active = 1", senderDomain).Scan(&count)
 			if err == nil && count > 0 {
@@ -336,7 +359,13 @@ func (c *OutboundClient) getDomainForSender(senderDomain string) string {
 	}
 
 	// 如果发件人域名为空或是localhost，尝试从数据库获取第一个活跃域名
-	if c.db != nil {
+	if c.svcCtx != nil {
+		domain, err := c.svcCtx.DomainModel.GetFirstActiveDomain()
+		if err == nil && domain != "" {
+			return domain
+		}
+	} else if c.db != nil {
+		// 兼容性：使用原生SQL
 		var domain string
 		err := c.db.QueryRow("SELECT name FROM domains WHERE is_active = 1 AND name != 'localhost' ORDER BY id LIMIT 1").Scan(&domain)
 		if err == nil && domain != "" {
@@ -370,7 +399,17 @@ func (c *OutboundClient) IsExternalEmail(email string) bool {
 
 	domain := extractDomain(email)
 
-	// 如果有数据库连接，从数据库查询所有活跃域名
+	// 优先使用svcCtx
+	if c.svcCtx != nil {
+		exists, err := c.svcCtx.DomainModel.CheckActiveDomainExists(domain)
+		if err != nil {
+			log.Printf("查询域名失败: %v", err)
+			return true // 查询失败时假设是外部邮箱
+		}
+		return !exists && domain != "localhost"
+	}
+
+	// 兼容性：如果有数据库连接，从数据库查询所有活跃域名
 	if c.db != nil {
 		var count int
 		err := c.db.QueryRow("SELECT COUNT(*) FROM domains WHERE name = ? AND is_active = 1", domain).Scan(&count)

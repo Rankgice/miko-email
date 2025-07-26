@@ -340,41 +340,27 @@ type MailboxStats struct {
 
 // GetAllMailboxes 获取所有邮箱列表（管理员）
 func (s *Service) GetAllMailboxes() ([]AdminMailboxResponse, error) {
-	query := `
-		SELECT m.id, m.email, m.user_id, m.admin_id, m.domain_id, m.is_active, m.created_at, m.updated_at,
-		       COALESCE(u.username, a.username, '未知用户') as username
-		FROM mailboxes m
-		LEFT JOIN users u ON m.user_id = u.id
-		LEFT JOIN admins a ON m.admin_id = a.id
-		ORDER BY m.created_at DESC
-	`
-	db, err := s.svcCtx.DB.DB()
+	modelMailboxes, err := s.svcCtx.MailboxModel.GetAllMailboxesWithOwner()
 	if err != nil {
 		return nil, err
 	}
-	rows, err := db.Query(query)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
 
 	// 初始化为空数组而不是nil，确保JSON序列化时返回[]而不是null
-	mailboxes := make([]AdminMailboxResponse, 0)
-	for rows.Next() {
-		var mailbox AdminMailboxResponse
-		var isActive bool
-
-		err := rows.Scan(
-			&mailbox.ID, &mailbox.Email, &mailbox.UserID, &mailbox.AdminID,
-			&mailbox.DomainID, &isActive, &mailbox.CreatedAt, &mailbox.UpdatedAt,
-			&mailbox.Username,
-		)
-		if err != nil {
-			continue
+	mailboxes := make([]AdminMailboxResponse, 0, len(modelMailboxes))
+	for _, modelMailbox := range modelMailboxes {
+		mailbox := AdminMailboxResponse{
+			ID:        modelMailbox.ID,
+			Email:     modelMailbox.Email,
+			UserID:    modelMailbox.UserID,
+			AdminID:   modelMailbox.AdminID,
+			DomainID:  modelMailbox.DomainID,
+			CreatedAt: modelMailbox.CreatedAt,
+			UpdatedAt: modelMailbox.UpdatedAt,
+			Username:  modelMailbox.Username,
 		}
 
 		// 转换状态
-		if isActive {
+		if modelMailbox.IsActive {
 			mailbox.Status = "active"
 		} else {
 			mailbox.Status = "suspended"

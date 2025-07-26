@@ -313,3 +313,59 @@ func (m *MailboxModel) CheckEmailExists(email string) (bool, error) {
 	}
 	return count > 0, nil
 }
+
+// AdminMailboxInfo 管理员邮箱信息结构体
+type AdminMailboxInfo struct {
+	ID        int64     `json:"id"`
+	Email     string    `json:"email"`
+	UserID    *int64    `json:"user_id"`
+	AdminID   *int64    `json:"admin_id"`
+	DomainID  int64     `json:"domain_id"`
+	IsActive  bool      `json:"is_active"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Username  string    `json:"username"`
+}
+
+// GetAllMailboxesWithOwner 获取所有邮箱列表（包含所有者信息）
+func (m *MailboxModel) GetAllMailboxesWithOwner() ([]AdminMailboxInfo, error) {
+	var mailboxes []AdminMailboxInfo
+
+	err := m.db.Table("mailbox m").
+		Select(`m.id, m.email, m.user_id, m.admin_id, m.domain_id, m.is_active, m.created_at, m.updated_at,
+				COALESCE(u.username, a.username, '未知用户') as username`).
+		Joins("LEFT JOIN user u ON m.user_id = u.id").
+		Joins("LEFT JOIN admin a ON m.admin_id = a.id").
+		Order("m.created_at DESC").
+		Find(&mailboxes).Error
+
+	return mailboxes, err
+}
+
+// CheckActiveMailboxExistsByDomain 检查域名下是否有活跃邮箱
+func (m *MailboxModel) CheckActiveMailboxExistsByDomain(domain string) (bool, error) {
+	var count int64
+	err := m.db.Model(&Mailbox{}).
+		Where("email LIKE ? AND is_active = ?", "%@"+domain, true).
+		Count(&count).Error
+
+	if err != nil {
+		return false, err
+	}
+
+	return count > 0, nil
+}
+
+// CheckActiveMailboxExists 检查指定邮箱是否存在且活跃
+func (m *MailboxModel) CheckActiveMailboxExists(email string) (bool, error) {
+	var count int64
+	err := m.db.Model(&Mailbox{}).
+		Where("email = ? AND is_active = ?", email, true).
+		Count(&count).Error
+
+	if err != nil {
+		return false, err
+	}
+
+	return count > 0, nil
+}

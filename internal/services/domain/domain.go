@@ -75,32 +75,16 @@ func (s *Service) CreateDomain(name, mxRecord, aRecord, txtRecord string) (*mode
 // CreateDomainWithAllRecords 创建域名（包含所有DNS记录）
 func (s *Service) CreateDomainWithAllRecords(name, mxRecord, aRecord, txtRecord, spfRecord, dmarcRecord, dkimRecord, ptrRecord string) (*model.Domain, error) {
 	// 检查域名是否已存在
-	var count int
-	err := s.db.QueryRow("SELECT COUNT(*) FROM domains WHERE name = ?", name).Scan(&count)
+	exists, err := s.svcCtx.DomainModel.CheckDomainExist(name)
 	if err != nil {
 		return nil, err
 	}
-	if count > 0 {
+	if exists {
 		return nil, fmt.Errorf("域名已存在")
 	}
 
-	// 插入域名
-	result, err := s.db.Exec(`
-		INSERT INTO domains (name, mx_record, a_record, txt_record, spf_record, dmarc_record, dkim_record, ptr_record, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, name, mxRecord, aRecord, txtRecord, spfRecord, dmarcRecord, dkimRecord, ptrRecord, time.Now(), time.Now())
-
-	if err != nil {
-		return nil, err
-	}
-
-	domainID, err := result.LastInsertId()
-	if err != nil {
-		return nil, err
-	}
-
+	// 创建域名
 	domain := &model.Domain{
-		Id:                         domainID,
 		Name:                       name,
 		IsVerified:                 false,
 		IsActive:                   true,
@@ -115,6 +99,10 @@ func (s *Service) CreateDomainWithAllRecords(name, mxRecord, aRecord, txtRecord,
 		ReceiverVerificationStatus: "pending",
 		CreatedAt:                  time.Now(),
 		UpdatedAt:                  time.Now(),
+	}
+
+	if err := s.svcCtx.DomainModel.Create(nil, domain); err != nil {
+		return nil, err
 	}
 
 	return domain, nil
@@ -174,7 +162,7 @@ func (s *Service) VerifyDomain(domainID int64) (*model.Domain, error) {
 }
 
 // VerifySenderConfiguration 验证发件配置
-func (s *Service) VerifySenderConfiguration(domainID int) (*model.Domain, error) {
+func (s *Service) VerifySenderConfiguration(domainID int64) (*model.Domain, error) {
 	// 获取域名信息
 	domain, err := s.GetDomainByID(domainID)
 	if err != nil {
@@ -205,9 +193,7 @@ func (s *Service) VerifySenderConfiguration(domainID int) (*model.Domain, error)
 	}
 
 	// 更新发件验证状态
-	_, err = s.db.Exec("UPDATE domains SET sender_verification_status = ?, updated_at = ? WHERE id = ?",
-		senderStatus, time.Now(), domainID)
-	if err != nil {
+	if err := s.svcCtx.DomainModel.UpdateSenderVerificationStatus(nil, domainID, senderStatus); err != nil {
 		return nil, err
 	}
 
@@ -228,8 +214,8 @@ func (s *Service) VerifyReceiverConfiguration(domainID int64) (*model.Domain, er
 	receiverStatus := "verified"
 
 	// 验证MX记录
-	if domain.MXRecord != "" {
-		if !s.verifyMXRecord(domain.Name, domain.MXRecord) {
+	if domain.MxRecord != "" {
+		if !s.verifyMXRecord(domain.Name, domain.MxRecord) {
 			receiverStatus = "failed"
 		}
 	}
@@ -249,9 +235,7 @@ func (s *Service) VerifyReceiverConfiguration(domainID int64) (*model.Domain, er
 	}
 
 	// 更新收件验证状态
-	_, err = s.db.Exec("UPDATE domains SET receiver_verification_status = ?, updated_at = ? WHERE id = ?",
-		receiverStatus, time.Now(), domainID)
-	if err != nil {
+	if err := s.svcCtx.DomainModel.UpdateReceiverVerificationStatus(nil, domainID, receiverStatus); err != nil {
 		return nil, err
 	}
 
@@ -478,14 +462,8 @@ func (s *Service) UpdateDomain(domainID int64, mxRecord, aRecord, txtRecord stri
 }
 
 // UpdateDomainWithAllRecords 更新域名信息（包含所有DNS记录）
-func (s *Service) UpdateDomainWithAllRecords(domainID int, mxRecord, aRecord, txtRecord, spfRecord, dmarcRecord, dkimRecord, ptrRecord string) error {
-	_, err := s.db.Exec(`
-		UPDATE domains
-		SET mx_record = ?, a_record = ?, txt_record = ?, spf_record = ?, dmarc_record = ?, dkim_record = ?, ptr_record = ?, updated_at = ?
-		WHERE id = ?
-	`, mxRecord, aRecord, txtRecord, spfRecord, dmarcRecord, dkimRecord, ptrRecord, time.Now(), domainID)
-
-	return err
+func (s *Service) UpdateDomainWithAllRecords(domainID int64, mxRecord, aRecord, txtRecord, spfRecord, dmarcRecord, dkimRecord, ptrRecord string) error {
+	return s.svcCtx.DomainModel.UpdateAllDNSRecords(nil, int64(domainID), mxRecord, aRecord, txtRecord, spfRecord, dmarcRecord, dkimRecord, ptrRecord)
 }
 
 // DeleteDomain 删除域名

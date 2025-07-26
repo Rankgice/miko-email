@@ -102,15 +102,11 @@ type Service struct {
 }
 
 func NewService(svcCtx *svc.ServiceContext) *Service {
-	db, err := svcCtx.DB.DB()
-	if err != nil {
-		return nil
-	}
 	return &Service{
 		svcCtx:         svcCtx,
 		tracker:        NewConnectionTracker(),
 		forwardService: forward.NewService(svcCtx),
-		smtpClient:     smtp.NewOutboundClientWithDB(db), // 暂时使用固定域名
+		smtpClient:     smtp.NewOutboundClientWithSvcCtx(svcCtx),
 	}
 }
 

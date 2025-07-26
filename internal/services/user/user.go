@@ -1,10 +1,8 @@
 package user
 
 import (
-	"database/sql"
 	"errors"
 	"fmt"
-	"time"
 
 	"gorm.io/gorm"
 	"miko-email/internal/model"
@@ -19,69 +17,30 @@ func NewService(svcCtx *svc.ServiceContext) *Service {
 	return &Service{svcCtx: svcCtx}
 }
 
-// UserWithStats 用户统计信息
+// UserWithStats 用户统计信息（使用model中的定义并添加Status字段）
 type UserWithStats struct {
-	ID           int64     `json:"id" db:"id"`
-	Username     string    `json:"username" db:"username"`
-	Password     string    `json:"-" db:"password"` // 不在JSON中显示密码
-	Email        string    `json:"email" db:"email"`
-	IsActive     bool      `json:"is_active" db:"is_active"`
-	Contribution int       `json:"contribution" db:"contribution"` // 贡献度
-	InviteCode   string    `json:"invite_code" db:"invite_code"`   // 邀请码
-	InvitedBy    *int64    `json:"invited_by" db:"invited_by"`     // 被谁邀请
-	CreatedAt    time.Time `json:"created_at" db:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at" db:"updated_at"`
-	MailboxCount int       `json:"mailbox_count"`
-	Status       string    `json:"status"`
-	InviterName  string    `json:"inviter_name"`
+	model.UserWithStats
+	Status string `json:"status"`
 }
 
 // GetUsers 获取用户列表
 func (s *Service) GetUsers() ([]UserWithStats, error) {
-	query := `
-		SELECT 
-			u.id, u.username, u.email, u.is_active, u.contribution, 
-			u.invite_code, u.invited_by, u.created_at, u.updated_at,
-			COUNT(m.id) as mailbox_count,
-			COALESCE(inviter.username, admin_inviter.username, '') as inviter_name
-		FROM users u
-		LEFT JOIN mailboxes m ON u.id = m.user_id AND m.is_active = 1
-		LEFT JOIN users inviter ON u.invited_by = inviter.id
-		LEFT JOIN admins admin_inviter ON u.invited_by = admin_inviter.id
-		GROUP BY u.id, u.username, u.email, u.is_active, u.contribution, 
-				 u.invite_code, u.invited_by, u.created_at, u.updated_at,
-				 inviter.username, admin_inviter.username
-		ORDER BY u.created_at DESC
-	`
-	db, err := s.svcCtx.DB.DB()
+	modelUsers, err := s.svcCtx.UserModel.GetUsersWithStats()
 	if err != nil {
 		return nil, err
 	}
-	rows, err := db.Query(query)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
 
+	// 转换为service层的UserWithStats并设置状态
 	var users []UserWithStats
-	for rows.Next() {
-		var user UserWithStats
-		err = rows.Scan(
-			&user.ID, &user.Username, &user.Email, &user.IsActive, &user.Contribution,
-			&user.InviteCode, &user.InvitedBy, &user.CreatedAt, &user.UpdatedAt,
-			&user.MailboxCount, &user.InviterName,
-		)
-		if err != nil {
-			return nil, err
+	for _, modelUser := range modelUsers {
+		user := UserWithStats{
+			UserWithStats: modelUser,
 		}
-
-		// 设置状态
-		if user.IsActive {
+		if modelUser.IsActive {
 			user.Status = "active"
 		} else {
 			user.Status = "inactive"
 		}
-
 		users = append(users, user)
 	}
 
@@ -90,43 +49,25 @@ func (s *Service) GetUsers() ([]UserWithStats, error) {
 
 // GetUserByID 根据ID获取用户
 func (s *Service) GetUserByID(userID int64) (*UserWithStats, error) {
-	query := `
-		SELECT 
-			u.id, u.username, u.email, u.is_active, u.contribution, 
-			u.invite_code, u.invited_by, u.created_at, u.updated_at,
-			COUNT(m.id) as mailbox_count,
-			COALESCE(inviter.username, admin_inviter.username, '') as inviter_name
-		FROM users u
-		LEFT JOIN mailboxes m ON u.id = m.user_id AND m.is_active = 1
-		LEFT JOIN users inviter ON u.invited_by = inviter.id
-		LEFT JOIN admins admin_inviter ON u.invited_by = admin_inviter.id
-		WHERE u.id = ?
-		GROUP BY u.id, u.username, u.email, u.is_active, u.contribution, 
-				 u.invite_code, u.invited_by, u.created_at, u.updated_at,
-				 inviter.username, admin_inviter.username
-	`
-
-	var user UserWithStats
-	db, err := s.svcCtx.DB.DB()
+	modelUser, err := s.svcCtx.UserModel.GetUserWithStatsByID(userID)
 	if err != nil {
-		return nil, err
-	}
-	err = db.QueryRow(query, userID).Scan(&user)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, fmt.Errorf("用户不存在")
 		}
 		return nil, err
 	}
 
-	// 设置状态
-	if user.IsActive {
+	// 转换为service层的UserWithStats并设置状态
+	user := &UserWithStats{
+		UserWithStats: *modelUser,
+	}
+	if modelUser.IsActive {
 		user.Status = "active"
 	} else {
 		user.Status = "inactive"
 	}
 
-	return &user, nil
+	return user, nil
 }
 
 // GetUserMailboxes 获取用户的邮箱列表
