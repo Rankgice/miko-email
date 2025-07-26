@@ -126,20 +126,17 @@ func (h *UserHandler) GetUserMailboxes(c *gin.Context) {
 	userIDStr := c.Param("id")
 	userID, err := strconv.ParseInt(userIDStr, 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "用户ID格式错误"})
+		c.JSON(http.StatusBadRequest, result.ErrorSimpleResult("用户ID格式错误"))
 		return
 	}
 
 	mailboxes, err := h.userService.GetUserMailboxes(userID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "获取用户邮箱失败"})
+		c.JSON(http.StatusInternalServerError, result.ErrorSimpleResult("获取用户邮箱失败"))
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"data":    mailboxes,
-	})
+	c.JSON(http.StatusOK, result.SuccessResult(mailboxes))
 }
 
 // UpdateUserStatus 更新用户状态
@@ -147,7 +144,7 @@ func (h *UserHandler) UpdateUserStatus(c *gin.Context) {
 	userIDStr := c.Param("id")
 	userID, err := strconv.ParseInt(userIDStr, 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "用户ID格式错误"})
+		c.JSON(http.StatusBadRequest, result.ErrorSimpleResult("用户ID格式错误"))
 		return
 	}
 
@@ -155,7 +152,7 @@ func (h *UserHandler) UpdateUserStatus(c *gin.Context) {
 		Status string `json:"status"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "请求参数错误"})
+		c.JSON(http.StatusBadRequest, result.ErrorSimpleResult("请求参数错误"))
 		return
 	}
 
@@ -170,20 +167,17 @@ func (h *UserHandler) UpdateUserStatus(c *gin.Context) {
 		isActive = false
 		message = "用户已暂停"
 	default:
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "无效的状态值"})
+		c.JSON(http.StatusBadRequest, result.ErrorSimpleResult("无效的状态值"))
 		return
 	}
 
 	err = h.userService.UpdateUserStatus(userID, isActive)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
+		c.JSON(http.StatusBadRequest, result.ErrorSimpleResult(err.Error()))
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": message,
-	})
+	c.JSON(http.StatusOK, result.SimpleResult(message))
 }
 
 // DeleteUser 删除用户
@@ -191,18 +185,15 @@ func (h *UserHandler) DeleteUser(c *gin.Context) {
 	userIDStr := c.Param("id")
 	userID, err := strconv.ParseInt(userIDStr, 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "用户ID格式错误"})
+		c.JSON(http.StatusBadRequest, result.ErrorSimpleResult("用户ID格式错误"))
 		return
 	}
 
 	err = h.userService.DeleteUser(userID)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
+		c.JSON(http.StatusBadRequest, result.ErrorSimpleResult(err.Error()))
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": "用户删除成功",
-	})
+	c.JSON(http.StatusOK, result.SimpleResult("用户删除成功"))
 }
