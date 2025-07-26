@@ -14,6 +14,7 @@ import (
 	"io"
 	"log"
 	"math/big"
+	"miko-email/internal/config"
 	"mime/quotedprintable"
 	"net"
 	"regexp"
@@ -157,9 +158,16 @@ func (s *Service) startSMTPSServer(port string) error {
 		return s.startPlainSMTPServer(port)
 	}
 
+	// 获取配置中的域名
+	cfg := config.Load()
+	serverName := cfg.Domain
+	if serverName == "" || serverName == "localhost" {
+		serverName = "mail.local"
+	}
+
 	tlsConfig := &tls.Config{
 		Certificates: []tls.Certificate{cert},
-		ServerName:   "localhost",
+		ServerName:   serverName,
 	}
 
 	listener, err := tls.Listen("tcp", ":"+port, tlsConfig)
@@ -204,6 +212,9 @@ func (s *Service) startSMTPWithSTARTTLS(port string) error {
 
 // generateSelfSignedCert 生成自签名证书
 func (s *Service) generateSelfSignedCert() (tls.Certificate, error) {
+	// 加载配置
+	cfg := config.Load()
+
 	// 生成私钥
 	priv, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -226,7 +237,7 @@ func (s *Service) generateSelfSignedCert() (tls.Certificate, error) {
 		KeyUsage:    x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
 		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		IPAddresses: []net.IP{net.IPv4(127, 0, 0, 1), net.IPv6loopback},
-		DNSNames:    []string{"localhost", "jbjj.site", "*.jbjj.site"},
+		DNSNames:    []string{"localhost", cfg.Domain, "*." + cfg.Domain},
 	}
 
 	// 生成证书
@@ -312,7 +323,12 @@ func (s *Service) handleSMTPConnection(conn net.Conn, isSSL bool) {
 	writer := bufio.NewWriter(conn)
 
 	// 发送欢迎消息
-	s.writeResponse(writer, 220, "jbjj.site Miko Email SMTP Server Ready")
+	cfg := config.Load()
+	serverDomain := cfg.Domain
+	if serverDomain == "" || serverDomain == "localhost" {
+		serverDomain = "mail.local"
+	}
+	s.writeResponse(writer, 220, fmt.Sprintf("%s Miko Email SMTP Server Ready", serverDomain))
 
 	session := &SMTPSession{
 		conn:   conn,
@@ -442,9 +458,16 @@ func (session *SMTPSession) handleHelo(args string, command string) {
 	session.helo = args
 	log.Printf("SMTP握手: %s (来自 %s)", args, session.conn.RemoteAddr())
 
+	// 获取配置的域名作为服务器主机名
+	cfg := config.Load()
+	serverHostname := cfg.Domain
+	if serverHostname == "" || serverHostname == "localhost" {
+		serverHostname = "mail.local"
+	}
+
 	if command == "EHLO" {
-		// EHLO响应，支持扩展
-		session.writer.WriteString("250-Hello " + args + "\r\n")
+		// EHLO响应，支持扩展，使用配置的域名作为主机名
+		session.writer.WriteString("250-" + serverHostname + " Hello " + args + "\r\n")
 
 		// 如果不是SSL连接且不是已经启用TLS，则广告STARTTLS
 		if !session.isSSL && !session.tlsEnabled {
@@ -454,8 +477,8 @@ func (session *SMTPSession) handleHelo(args string, command string) {
 		session.writer.WriteString("250-AUTH PLAIN LOGIN\r\n")
 		session.writer.WriteString("250 8BITMIME\r\n")
 	} else {
-		// HELO响应，简单模式
-		session.writer.WriteString("250 Hello " + args + "\r\n")
+		// HELO响应，简单模式，使用配置的域名作为主机名
+		session.writer.WriteString("250 " + serverHostname + " Hello " + args + "\r\n")
 	}
 
 	session.writer.Flush()
@@ -480,9 +503,15 @@ func (session *SMTPSession) handleStartTLS() {
 	session.writeResponse(220, "Ready to start TLS")
 
 	// 创建TLS配置
+	cfg := config.Load()
+	serverName := cfg.Domain
+	if serverName == "" || serverName == "localhost" {
+		serverName = "mail.local"
+	}
+
 	tlsConfig := &tls.Config{
 		Certificates: []tls.Certificate{cert},
-		ServerName:   "localhost",
+		ServerName:   serverName,
 	}
 
 	// 将连接升级为TLS
@@ -1596,7 +1625,8 @@ func (session *SMTPSession) isValidExternalEmail(email string) bool {
 	}
 
 	// 检查是否为本地域名
-	localDomains := []string{"localhost", "jbjj.site"}
+	cfg := config.Load()
+	localDomains := []string{"localhost", cfg.Domain}
 	for _, localDomain := range localDomains {
 		if domain == localDomain {
 			return false // 本地域名应该通过 isLocalUser 检查
@@ -1633,6 +1663,9 @@ func (s *Service) SaveEmail(mailboxID int64, fromAddr, toAddr, subject, body str
 
 // saveEmail 保存邮件到数据库
 func (session *SMTPSession) saveEmail() error {
+	// 添加Received头部到邮件数据
+	session.addReceivedHeader()
+
 	// 解析邮件内容
 	subject, body := session.parseEmailContent()
 
@@ -1674,6 +1707,31 @@ func (session *SMTPSession) saveEmail() error {
 	}
 
 	return nil
+}
+
+// addReceivedHeader 添加Received头部到邮件数据
+func (session *SMTPSession) addReceivedHeader() {
+	// 获取配置的域名作为服务器主机名
+	cfg := config.Load()
+	serverHostname := cfg.Domain
+	if serverHostname == "" || serverHostname == "localhost" {
+		serverHostname = "mail.local"
+	}
+
+	// 获取客户端信息
+	clientAddr := session.conn.RemoteAddr().String()
+	clientIP := strings.Split(clientAddr, ":")[0]
+
+	// 构建Received头部
+	receivedHeader := fmt.Sprintf("Received: from %s ([%s])\r\n\tby %s with SMTP\r\n\tfor <%s>; %s\r\n",
+		session.helo,
+		clientIP,
+		serverHostname,
+		strings.Join(session.to, ", "),
+		time.Now().Format(time.RFC1123Z))
+
+	// 将Received头部添加到邮件数据的开头
+	session.data = append([]byte(receivedHeader), session.data...)
 }
 
 // SaveEmailToSent 保存邮件到已发送文件夹

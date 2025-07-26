@@ -42,6 +42,7 @@ type YAMLConfig struct {
 
 	Domain struct {
 		Default                 string   `yaml:"default"`
+		SMTPHostname            string   `yaml:"smtp_hostname"`
 		Allowed                 []string `yaml:"allowed"`
 		EnableDomainRestriction bool     `yaml:"enable_domain_restriction"`
 	} `yaml:"domain"`

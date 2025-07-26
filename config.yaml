@@ -50,7 +50,7 @@ database:
 # 域名配置
 domain:
   # 默认域名
-  default: "localhost"
+  default: "jbjj.site"
   # 允许的域名列表 (空数组表示不限制域名，接受所有域名)
   allowed: []
   # 是否启用域名限制 (false表示不限制)

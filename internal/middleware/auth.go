@@ -75,7 +75,15 @@ func (m *AdminMiddleware) RequireAdmin() gin.HandlerFunc {
 		}
 
 		isAdmin, ok := session.Values["is_admin"]
-		if !ok || !isAdmin.(bool) {
+		if !ok {
+			c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "需要管理员权限"})
+			c.Abort()
+			return
+		}
+
+		// 安全的类型断言
+		adminBool, ok := isAdmin.(bool)
+		if !ok || !adminBool {
 			c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "需要管理员权限"})
 			c.Abort()
 			return

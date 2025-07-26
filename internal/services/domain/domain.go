@@ -26,9 +26,17 @@ func (s *Service) GetDomains() ([]*model.Domain, error) {
 	// 使用DomainModel的List方法获取所有域名，按创建时间倒序
 	domains, _, err := s.svcCtx.DomainModel.List(model.DomainReq{})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("查询域名列表失败: %v", err)
 	}
-
+	// 补充默认状态
+	for i, domain := range domains {
+		if domain.SenderVerificationStatus == "" {
+			domains[i].SenderVerificationStatus = "pending"
+		}
+		if domain.ReceiverVerificationStatus == "" {
+			domains[i].ReceiverVerificationStatus = "pending"
+		}
+	}
 	return domains, nil
 }
 
@@ -45,18 +53,68 @@ func (s *Service) CreateDomain(name, mxRecord, aRecord, txtRecord string) (*mode
 
 	// 创建域名
 	domain := &model.Domain{
-		Name:       name,
-		IsVerified: false,
-		IsActive:   true,
-		MxRecord:   mxRecord,
-		ARecord:    aRecord,
-		TxtRecord:  txtRecord,
-		CreatedAt:  time.Now(),
-		UpdatedAt:  time.Now(),
+		Name:                       name,
+		IsVerified:                 false,
+		IsActive:                   true,
+		MxRecord:                   mxRecord,
+		ARecord:                    aRecord,
+		TxtRecord:                  txtRecord,
+		SenderVerificationStatus:   "pending",
+		ReceiverVerificationStatus: "pending",
+		CreatedAt:                  time.Now(),
+		UpdatedAt:                  time.Now(),
 	}
 
 	if err := s.svcCtx.DomainModel.Create(nil, domain); err != nil {
 		return nil, err
+	}
+
+	return domain, nil
+}
+
+// CreateDomainWithAllRecords 创建域名（包含所有DNS记录）
+func (s *Service) CreateDomainWithAllRecords(name, mxRecord, aRecord, txtRecord, spfRecord, dmarcRecord, dkimRecord, ptrRecord string) (*model.Domain, error) {
+	// 检查域名是否已存在
+	var count int
+	err := s.db.QueryRow("SELECT COUNT(*) FROM domains WHERE name = ?", name).Scan(&count)
+	if err != nil {
+		return nil, err
+	}
+	if count > 0 {
+		return nil, fmt.Errorf("域名已存在")
+	}
+
+	// 插入域名
+	result, err := s.db.Exec(`
+		INSERT INTO domains (name, mx_record, a_record, txt_record, spf_record, dmarc_record, dkim_record, ptr_record, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, name, mxRecord, aRecord, txtRecord, spfRecord, dmarcRecord, dkimRecord, ptrRecord, time.Now(), time.Now())
+
+	if err != nil {
+		return nil, err
+	}
+
+	domainID, err := result.LastInsertId()
+	if err != nil {
+		return nil, err
+	}
+
+	domain := &model.Domain{
+		Id:                         domainID,
+		Name:                       name,
+		IsVerified:                 false,
+		IsActive:                   true,
+		MxRecord:                   mxRecord,
+		ARecord:                    aRecord,
+		TxtRecord:                  txtRecord,
+		SPFRecord:                  spfRecord,
+		DMARCRecord:                dmarcRecord,
+		DKIMRecord:                 dkimRecord,
+		PTRRecord:                  ptrRecord,
+		SenderVerificationStatus:   "pending",
+		ReceiverVerificationStatus: "pending",
+		CreatedAt:                  time.Now(),
+		UpdatedAt:                  time.Now(),
 	}
 
 	return domain, nil
@@ -70,7 +128,14 @@ func (s *Service) VerifyDomain(domainID int64) (*model.Domain, error) {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, fmt.Errorf("域名不存在")
 		}
-		return nil, err
+		return nil, fmt.Errorf("查询域名失败: %v", err)
+	}
+	// 补充默认状态
+	if domain.SenderVerificationStatus == "" {
+		domain.SenderVerificationStatus = "pending"
+	}
+	if domain.ReceiverVerificationStatus == "" {
+		domain.ReceiverVerificationStatus = "pending"
 	}
 
 	// 验证DNS记录
@@ -103,6 +168,94 @@ func (s *Service) VerifyDomain(domainID int64) (*model.Domain, error) {
 	}
 
 	domain.IsVerified = verified
+	domain.UpdatedAt = time.Now()
+
+	return domain, nil
+}
+
+// VerifySenderConfiguration 验证发件配置
+func (s *Service) VerifySenderConfiguration(domainID int) (*model.Domain, error) {
+	// 获取域名信息
+	domain, err := s.GetDomainByID(domainID)
+	if err != nil {
+		return nil, err
+	}
+
+	senderStatus := "verified"
+
+	// 验证SPF记录
+	if domain.SPFRecord != "" {
+		if !s.verifySPFRecord(domain.Name, domain.SPFRecord) {
+			senderStatus = "failed"
+		}
+	}
+
+	// 验证DKIM记录
+	if domain.DKIMRecord != "" {
+		if !s.verifyDKIMRecord(domain.Name, domain.DKIMRecord) {
+			senderStatus = "failed"
+		}
+	}
+
+	// 验证DMARC记录
+	if domain.DMARCRecord != "" {
+		if !s.verifyDMARCRecord(domain.Name, domain.DMARCRecord) {
+			senderStatus = "failed"
+		}
+	}
+
+	// 更新发件验证状态
+	_, err = s.db.Exec("UPDATE domains SET sender_verification_status = ?, updated_at = ? WHERE id = ?",
+		senderStatus, time.Now(), domainID)
+	if err != nil {
+		return nil, err
+	}
+
+	domain.SenderVerificationStatus = senderStatus
+	domain.UpdatedAt = time.Now()
+
+	return domain, nil
+}
+
+// VerifyReceiverConfiguration 验证收件配置
+func (s *Service) VerifyReceiverConfiguration(domainID int64) (*model.Domain, error) {
+	// 获取域名信息
+	domain, err := s.GetDomainByID(domainID)
+	if err != nil {
+		return nil, err
+	}
+
+	receiverStatus := "verified"
+
+	// 验证MX记录
+	if domain.MXRecord != "" {
+		if !s.verifyMXRecord(domain.Name, domain.MXRecord) {
+			receiverStatus = "failed"
+		}
+	}
+
+	// 验证A记录
+	if domain.ARecord != "" {
+		if !s.verifyARecord(domain.Name, domain.ARecord) {
+			receiverStatus = "failed"
+		}
+	}
+
+	// 验证PTR记录
+	if domain.PTRRecord != "" {
+		if !s.verifyPTRRecord(domain.ARecord, domain.PTRRecord) {
+			receiverStatus = "failed"
+		}
+	}
+
+	// 更新收件验证状态
+	_, err = s.db.Exec("UPDATE domains SET receiver_verification_status = ?, updated_at = ? WHERE id = ?",
+		receiverStatus, time.Now(), domainID)
+	if err != nil {
+		return nil, err
+	}
+
+	domain.ReceiverVerificationStatus = receiverStatus
 	domain.UpdatedAt = time.Now()
 
 	return domain, nil
@@ -205,6 +358,65 @@ func (s *Service) verifyDNSRecord(domain string, recordType uint16, expectedValu
 	return false
 }
 
+// verifySPFRecord 验证SPF记录
+func (s *Service) verifySPFRecord(domain, expectedSPF string) bool {
+	// SPF记录通常在TXT记录中
+	txtRecords, err := net.LookupTXT(domain)
+	if err == nil {
+		for _, txt := range txtRecords {
+			if strings.HasPrefix(txt, "v=spf1") && strings.Contains(txt, expectedSPF) {
+				return true
+			}
+		}
+	}
+	return s.verifyDNSRecord(domain, dns.TypeTXT, expectedSPF)
+}
+
+// verifyDMARCRecord 验证DMARC记录
+func (s *Service) verifyDMARCRecord(domain, expectedDMARC string) bool {
+	// DMARC记录在_dmarc子域名的TXT记录中
+	dmarcDomain := "_dmarc." + domain
+	txtRecords, err := net.LookupTXT(dmarcDomain)
+	if err == nil {
+		for _, txt := range txtRecords {
+			if strings.HasPrefix(txt, "v=DMARC1") && strings.Contains(txt, expectedDMARC) {
+				return true
+			}
+		}
+	}
+	return s.verifyDNSRecord(dmarcDomain, dns.TypeTXT, expectedDMARC)
+}
+
+// verifyDKIMRecord 验证DKIM记录
+func (s *Service) verifyDKIMRecord(domain, expectedDKIM string) bool {
+	// DKIM记录通常在selector._domainkey.domain的TXT记录中
+	// 这里假设使用default作为selector
+	dkimDomain := "default._domainkey." + domain
+	txtRecords, err := net.LookupTXT(dkimDomain)
+	if err == nil {
+		for _, txt := range txtRecords {
+			if strings.Contains(txt, "v=DKIM1") && strings.Contains(txt, expectedDKIM) {
+				return true
+			}
+		}
+	}
+	return s.verifyDNSRecord(dkimDomain, dns.TypeTXT, expectedDKIM)
+}
+
+// verifyPTRRecord 验证PTR记录
+func (s *Service) verifyPTRRecord(ip, expectedPTR string) bool {
+	// 反向DNS查询
+	names, err := net.LookupAddr(ip)
+	if err == nil {
+		for _, name := range names {
+			if strings.TrimSuffix(name, ".") == strings.TrimSuffix(expectedPTR, ".") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // GetDNSRecords 获取域名的所有DNS记录信息
 func (s *Service) GetDNSRecords(domain string) map[string][]string {
 	records := make(map[string][]string)
@@ -242,9 +454,38 @@ func (s *Service) GetDNSRecords(domain string) map[string][]string {
 	return records
 }
 
+// GetDomainByID 根据ID获取域名
+func (s *Service) GetDomainByID(domainID int64) (*model.Domain, error) {
+	domain, err := s.svcCtx.DomainModel.GetById(domainID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("域名不存在")
+		}
+		return nil, err
+	}
+	if domain.SenderVerificationStatus == "" {
+		domain.SenderVerificationStatus = "pending"
+	}
+	if domain.ReceiverVerificationStatus == "" {
+		domain.ReceiverVerificationStatus = "pending"
+	}
+	return domain, nil
+}
+
 // UpdateDomain 更新域名信息
 func (s *Service) UpdateDomain(domainID int64, mxRecord, aRecord, txtRecord string) error {
 	return s.svcCtx.DomainModel.UpdateDNSRecords(nil, domainID, mxRecord, aRecord, txtRecord)
+}
+
+// UpdateDomainWithAllRecords 更新域名信息（包含所有DNS记录）
+func (s *Service) UpdateDomainWithAllRecords(domainID int, mxRecord, aRecord, txtRecord, spfRecord, dmarcRecord, dkimRecord, ptrRecord string) error {
+	_, err := s.db.Exec(`
+		UPDATE domains
+		SET mx_record = ?, a_record = ?, txt_record = ?, spf_record = ?, dmarc_record = ?, dkim_record = ?, ptr_record = ?, updated_at = ?
+		WHERE id = ?
+	`, mxRecord, aRecord, txtRecord, spfRecord, dmarcRecord, dkimRecord, ptrRecord, time.Now(), domainID)
+
+	return err
 }
 
 // DeleteDomain 删除域名
@@ -273,5 +514,18 @@ func (s *Service) DeleteDomain(domainID int64) error {
 
 // GetAvailableDomains 获取可用的域名列表（已验证且激活的）
 func (s *Service) GetAvailableDomains() ([]*model.Domain, error) {
-	return s.svcCtx.DomainModel.GetAvailableDomains()
+	domains, err := s.svcCtx.DomainModel.GetAvailableDomains()
+	if err != nil {
+		return nil, err
+	}
+	// 补充默认状态
+	for i, domain := range domains {
+		if domain.SenderVerificationStatus == "" {
+			domains[i].SenderVerificationStatus = "pending"
+		}
+		if domain.ReceiverVerificationStatus == "" {
+			domains[i].ReceiverVerificationStatus = "pending"
+		}
+	}
+	return domains, nil
 }

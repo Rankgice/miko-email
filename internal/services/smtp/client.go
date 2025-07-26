@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"log"
+	"miko-email/internal/services/dkim"
 	"net"
 	"net/smtp"
 	"regexp"
@@ -14,8 +15,9 @@ import (
 
 // OutboundClient MX直接发送客户端
 type OutboundClient struct {
-	domain string  // 本地域名（兼容性保留）
-	db     *sql.DB // 数据库连接，用于动态获取域名
+	domain      string        // 本地域名（兼容性保留）
+	db          *sql.DB       // 数据库连接，用于动态获取域名
+	dkimService *dkim.Service // DKIM签名服务
 }
 
 // NewOutboundClient 创建MX发送客户端（兼容性保留）
@@ -28,7 +30,8 @@ func NewOutboundClient(domain string) *OutboundClient {
 // NewOutboundClientWithDB 创建支持多域名的MX发送客户端
 func NewOutboundClientWithDB(db *sql.DB) *OutboundClient {
 	return &OutboundClient{
-		db: db,
+		db:          db,
+		dkimService: dkim.NewService("./dkim_keys"),
 	}
 }
 
@@ -156,12 +159,18 @@ func (c *OutboundClient) buildMessage(from, to, subject, body string) []byte {
 	// 清理HTML标签，确保发送纯文本邮件
 	cleanBody := stripHTMLTags(body)
 
+	// 获取发件人域名
+	fromDomain := extractDomain(from)
+	if fromDomain == "" {
+		fromDomain = c.domain
+	}
+
 	// 构建邮件头
 	headers := make(map[string]string)
 	headers["From"] = from
 	headers["To"] = to
 	headers["Date"] = time.Now().Format(time.RFC1123Z)
-	headers["Message-ID"] = fmt.Sprintf("<%d.%s@%s>", time.Now().Unix(), generateRandomID(), c.domain)
+	headers["Message-ID"] = fmt.Sprintf("<%d.%s@%s>", time.Now().Unix(), generateRandomID(), fromDomain)
 
 	// 对主题进行MIME编码（如果包含非ASCII字符）
 	if needsMIMEEncoding(subject) {
@@ -214,7 +223,21 @@ func (c *OutboundClient) buildMessage(from, to, subject, body string) []byte {
 	message.WriteString("\r\n")
 	message.WriteString(encodedBody)
 
-	return []byte(message.String())
+	emailContent := []byte(message.String())
+
+	// 如果有DKIM服务，对邮件进行签名
+	if c.dkimService != nil && fromDomain != "" {
+		signedContent, err := c.dkimService.SignEmail(fromDomain, "default", emailContent)
+		if err != nil {
+			log.Printf("DKIM签名失败: %v", err)
+			// 签名失败时返回原始邮件
+			return emailContent
+		}
+		log.Printf("邮件已进行DKIM签名，域名: %s", fromDomain)
+		return signedContent
+	}
+
+	return emailContent
 }
 
 // isLocalEmail 检查是否为本地域名邮箱
@@ -267,21 +290,25 @@ func (c *OutboundClient) sendToLocalMX(from, to, subject, body string) error {
 	// 构建邮件内容
 	message := c.buildMessage(from, to, subject, body)
 
+	// 根据发件人邮箱获取域名
+	fromDomain := extractDomain(from)
+	localDomain := c.getDomainForSender(fromDomain)
+
 	// 本地MX服务器地址和端口
 	localMXServers := []string{
-		"localhost:25",
-		"localhost:587",
-		"localhost:465",
+		"127.0.0.1:25",
+		"127.0.0.1:587",
+		"127.0.0.1:465",
 	}
 
 	// 尝试连接到本地MX服务器
 	var lastErr error
 	for _, addr := range localMXServers {
-		log.Printf("尝试连接本地MX服务器: %s", addr)
+		log.Printf("尝试连接本地MX服务器: %s (域名: %s)", addr, localDomain)
 
-		err := c.sendDirectSMTP(addr, from, to, message, "localhost")
+		err := c.sendDirectSMTP(addr, from, to, message, localDomain)
 		if err == nil {
-			log.Printf("✅ 本地MX发送成功: %s -> %s (通过 %s)", from, to, addr)
+			log.Printf("✅ 本地MX发送成功: %s -> %s (通过 %s, 域名: %s)", from, to, addr, localDomain)
 			return nil
 		}
 
@@ -290,6 +317,40 @@ func (c *OutboundClient) sendToLocalMX(from, to, subject, body string) error {
 	}
 
 	return fmt.Errorf("所有本地MX服务器连接失败，最后错误: %v", lastErr)
+}
+
+// getDomainForSender 根据发件人域名获取对应的域名配置
+func (c *OutboundClient) getDomainForSender(senderDomain string) string {
+	// 如果发件人域名不为空且不是localhost，直接使用发件人域名
+	if senderDomain != "" && senderDomain != "localhost" {
+		// 如果有数据库连接，验证该域名是否在系统中配置
+		if c.db != nil {
+			var count int
+			err := c.db.QueryRow("SELECT COUNT(*) FROM domains WHERE name = ? AND is_active = 1", senderDomain).Scan(&count)
+			if err == nil && count > 0 {
+				return senderDomain
+			}
+		}
+		// 即使数据库中没有，也使用发件人域名（向后兼容）
+		return senderDomain
+	}
+
+	// 如果发件人域名为空或是localhost，尝试从数据库获取第一个活跃域名
+	if c.db != nil {
+		var domain string
+		err := c.db.QueryRow("SELECT name FROM domains WHERE is_active = 1 AND name != 'localhost' ORDER BY id LIMIT 1").Scan(&domain)
+		if err == nil && domain != "" {
+			return domain
+		}
+	}
+
+	// 如果有配置的域名且不是localhost，使用它
+	if c.domain != "" && c.domain != "localhost" {
+		return c.domain
+	}
+
+	// 最后的默认值
+	return "mail.local"
 }
 
 // extractDomain 提取邮箱域名
@@ -405,17 +466,20 @@ func (c *OutboundClient) SendMIMEEmail(from, to, mimeContent string) error {
 
 // sendMIMEToLocalMX 发送MIME邮件到本地MX服务器
 func (c *OutboundClient) sendMIMEToLocalMX(from, to, mimeContent string) error {
-	log.Printf("本地域名邮件，使用本地MX服务器: %s", extractDomain(to))
-	log.Printf("尝试连接本地MX服务器: localhost:25")
+	fromDomain := extractDomain(from)
+	localDomain := c.getDomainForSender(fromDomain)
+
+	log.Printf("本地域名邮件，使用本地MX服务器: %s (域名: %s)", extractDomain(to), localDomain)
+	log.Printf("尝试连接本地MX服务器: 127.0.0.1:25")
 
 	// 连接本地SMTP服务器
-	conn, err := net.Dial("tcp", "localhost:25")
+	conn, err := net.Dial("tcp", "127.0.0.1:25")
 	if err != nil {
 		return fmt.Errorf("连接本地MX服务器失败: %w", err)
 	}
 	defer conn.Close()
 
-	client, err := smtp.NewClient(conn, "localhost")
+	client, err := smtp.NewClient(conn, localDomain)
 	if err != nil {
 		return fmt.Errorf("创建SMTP客户端失败: %w", err)
 	}
@@ -447,7 +511,7 @@ func (c *OutboundClient) sendMIMEToLocalMX(from, to, mimeContent string) error {
 		return fmt.Errorf("完成邮件内容发送失败: %w", err)
 	}
 
-	log.Printf("✅ 本地MX发送成功: %s -> %s (通过 localhost:25)", from, to)
+	log.Printf("✅ 本地MX发送成功: %s -> %s (通过 %s:25)", from, to, localDomain)
 	return nil
 }
 

@@ -2,19 +2,19 @@ package server
 
 import (
 	"database/sql"
-	"miko-email/internal/svc"
-	"net/http"
-	"strings"
-
 	"miko-email/internal/config"
 	"miko-email/internal/handlers"
 	"miko-email/internal/middleware"
 	"miko-email/internal/services/auth"
+	"miko-email/internal/services/dkim"
 	"miko-email/internal/services/domain"
 	"miko-email/internal/services/email"
 	"miko-email/internal/services/forward"
 	"miko-email/internal/services/mailbox"
 	"miko-email/internal/services/user"
+	"miko-email/internal/svc"
+	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/sessions"
@@ -76,12 +76,13 @@ func (s *Server) setupRoutes(svcCtx *svc.ServiceContext) {
 	authService := auth.NewService(svcCtx)
 	mailboxService := mailbox.NewService(svcCtx)
 	domainService := domain.NewService(svcCtx)
+	dkimService := dkim.NewService("./dkim_keys")
 	userService := user.NewService(svcCtx)
 
 	// 创建处理器实例
 	authHandler := handlers.NewAuthHandler(authService, s.sessionStore, svcCtx)
 	mailboxHandler := handlers.NewMailboxHandler(mailboxService, s.sessionStore, svcCtx)
-	domainHandler := handlers.NewDomainHandler(domainService, s.sessionStore, svcCtx)
+	domainHandler := handlers.NewDomainHandler(domainService, dkimService, s.sessionStore, svcCtx)
 	userHandler := handlers.NewUserHandler(userService, s.sessionStore, svcCtx)
 	emailHandler := handlers.NewEmailHandler(s.emailService, mailboxService, s.forwardService, s.sessionStore, svcCtx)
 	webHandler := handlers.NewWebHandler(s.sessionStore, svcCtx)
@@ -181,6 +182,8 @@ func (s *Server) setupRoutes(svcCtx *svc.ServiceContext) {
 			apiAdmin.PUT("/domains/:id", domainHandler.UpdateDomain)
 			apiAdmin.DELETE("/domains/:id", domainHandler.DeleteDomain)
 			apiAdmin.POST("/domains/:id/verify", domainHandler.VerifyDomain)
+			apiAdmin.POST("/domains/:id/verify-sender", domainHandler.VerifySenderConfiguration)
+			apiAdmin.POST("/domains/:id/verify-receiver", domainHandler.VerifyReceiverConfiguration)
 
 			// 用户管理
 			apiAdmin.GET("/users", userHandler.GetUsers)
@@ -199,6 +202,7 @@ func (s *Server) setupRoutes(svcCtx *svc.ServiceContext) {
 		// 公共API
 		api.GET("/domains/available", domainHandler.GetAvailableDomains)
 		api.GET("/domains/dns", domainHandler.GetDomainDNSRecords)
+		api.GET("/domains/dkim", domainHandler.GetDKIMRecord)
 	}
 }
 

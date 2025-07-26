@@ -8,15 +8,21 @@ import (
 
 // Domain 域名模型
 type Domain struct {
-	Id         int64     `gorm:"column:id;primaryKey;autoIncrement;comment:数据库主键ID" json:"id"`               // 数据库主键ID
-	Name       string    `gorm:"column:name;uniqueIndex;not null;comment:域名" json:"name"`                    // 域名
-	IsVerified bool      `gorm:"column:is_verified;default:0;comment:是否已验证" json:"is_verified"`              // 是否已验证
-	IsActive   bool      `gorm:"column:is_active;default:1;comment:是否激活" json:"is_active"`                   // 是否激活
-	MxRecord   string    `gorm:"column:mx_record;comment:MX记录" json:"mx_record,omitempty"`                   // MX记录
-	ARecord    string    `gorm:"column:a_record;comment:A记录" json:"a_record,omitempty"`                      // A记录
-	TxtRecord  string    `gorm:"column:txt_record;comment:TXT记录" json:"txt_record,omitempty"`                // TXT记录
-	CreatedAt  time.Time `gorm:"column:created_at;default:CURRENT_TIMESTAMP;comment:创建时间" json:"created_at"` // 创建时间
-	UpdatedAt  time.Time `gorm:"column:updated_at;default:CURRENT_TIMESTAMP;comment:更新时间" json:"updated_at"` // 更新时间
+	Id                         int64     `gorm:"column:id;primaryKey;autoIncrement;comment:数据库主键ID" json:"id"`               // 数据库主键ID
+	Name                       string    `gorm:"column:name;uniqueIndex;not null;comment:域名" json:"name"`                    // 域名
+	IsVerified                 bool      `gorm:"column:is_verified;default:0;comment:是否已验证" json:"is_verified"`              // 是否已验证
+	IsActive                   bool      `gorm:"column:is_active;default:1;comment:是否激活" json:"is_active"`                   // 是否激活
+	MxRecord                   string    `gorm:"column:mx_record;comment:MX记录" json:"mx_record,omitempty"`                   // MX记录
+	ARecord                    string    `gorm:"column:a_record;comment:A记录" json:"a_record,omitempty"`                      // A记录
+	TxtRecord                  string    `gorm:"column:txt_record;comment:TXT记录" json:"txt_record,omitempty"`                // TXT记录
+	SPFRecord                  string    `json:"spf_record" db:"spf_record"`                                                 // SPF记录
+	DMARCRecord                string    `json:"dmarc_record" db:"dmarc_record"`                                             // DMARC记录
+	DKIMRecord                 string    `json:"dkim_record" db:"dkim_record"`                                               // DKIM记录
+	PTRRecord                  string    `json:"ptr_record" db:"ptr_record"`                                                 // PTR记录
+	SenderVerificationStatus   string    `json:"sender_verification_status" db:"sender_verification_status"`                 // 发件验证状态
+	ReceiverVerificationStatus string    `json:"receiver_verification_status" db:"receiver_verification_status"`             // 收件验证状态
+	CreatedAt                  time.Time `gorm:"column:created_at;default:CURRENT_TIMESTAMP;comment:创建时间" json:"created_at"` // 创建时间
+	UpdatedAt                  time.Time `gorm:"column:updated_at;default:CURRENT_TIMESTAMP;comment:更新时间" json:"updated_at"` // 更新时间
 }
 
 // TableName 指定表名
