@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"miko-email/internal/result"
 	"miko-email/internal/svc"
 	"net/http"
 	"strconv"
@@ -44,21 +45,18 @@ func (h *MailboxHandler) GetMailboxes(c *gin.Context) {
 
 	mailboxes, err := h.mailboxService.GetUserMailboxes(userID, isAdmin)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "获取邮箱列表失败"})
+		c.JSON(http.StatusInternalServerError, result.ErrorSimpleResult("获取邮箱列表失败"))
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"data":    mailboxes,
-	})
+	c.JSON(http.StatusOK, result.SuccessResult(mailboxes))
 }
 
 // CreateMailbox 创建邮箱
 func (h *MailboxHandler) CreateMailbox(c *gin.Context) {
 	var req CreateMailboxRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "请求参数错误"})
+		c.JSON(http.StatusBadRequest, result.ErrorSimpleResult("请求参数错误"))
 		return
 	}
 
@@ -67,33 +65,29 @@ func (h *MailboxHandler) CreateMailbox(c *gin.Context) {
 
 	// 验证前缀格式
 	if !isValidEmailPrefix(req.Prefix) {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "邮箱前缀格式不正确"})
+		c.JSON(http.StatusBadRequest, result.ErrorSimpleResult("邮箱前缀格式不正确"))
 		return
 	}
 
 	if len(req.Password) < 6 {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "密码长度至少6位"})
+		c.JSON(http.StatusBadRequest, result.ErrorSimpleResult("密码长度至少6位"))
 		return
 	}
 
 	mailbox, err := h.mailboxService.CreateMailboxWithPassword(userID, req.Prefix, req.Password, req.DomainID, isAdmin)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
+		c.JSON(http.StatusBadRequest, result.ErrorSimpleResult(err.Error()))
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": "邮箱创建成功",
-		"data":    mailbox,
-	})
+	c.JSON(http.StatusOK, result.DataResult("邮箱创建成功", mailbox))
 }
 
 // BatchCreateMailboxes 批量创建邮箱
 func (h *MailboxHandler) BatchCreateMailboxes(c *gin.Context) {
 	var req BatchCreateMailboxRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "请求参数错误"})
+		c.JSON(http.StatusBadRequest, result.ErrorSimpleResult("请求参数错误"))
 		return
 	}
 
@@ -103,22 +97,18 @@ func (h *MailboxHandler) BatchCreateMailboxes(c *gin.Context) {
 	// 验证所有前缀格式
 	for _, prefix := range req.Prefixes {
 		if !isValidEmailPrefix(prefix) {
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "邮箱前缀格式不正确: " + prefix})
+			c.JSON(http.StatusBadRequest, result.ErrorSimpleResult("邮箱前缀格式不正确: "+prefix))
 			return
 		}
 	}
 
 	mailboxes, err := h.mailboxService.BatchCreateMailboxes(userID, req.Prefixes, req.DomainID, isAdmin)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
+		c.JSON(http.StatusBadRequest, result.ErrorSimpleResult(err.Error()))
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": "批量创建邮箱成功",
-		"data":    mailboxes,
-	})
+	c.JSON(http.StatusOK, result.DataResult("批量创建邮箱成功", mailboxes))
 }
 
 // GetMailboxPassword 获取邮箱密码
@@ -126,7 +116,7 @@ func (h *MailboxHandler) GetMailboxPassword(c *gin.Context) {
 	mailboxIDStr := c.Param("id")
 	mailboxID, err := strconv.ParseInt(mailboxIDStr, 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "邮箱ID格式错误"})
+		c.JSON(http.StatusBadRequest, result.ErrorSimpleResult("邮箱ID格式错误"))
 		return
 	}
 
@@ -135,16 +125,13 @@ func (h *MailboxHandler) GetMailboxPassword(c *gin.Context) {
 
 	password, err := h.mailboxService.GetMailboxPassword(mailboxID, userID, isAdmin)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
+		c.JSON(http.StatusBadRequest, result.ErrorSimpleResult(err.Error()))
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"data": gin.H{
-			"password": password,
-		},
-	})
+	c.JSON(http.StatusOK, result.SuccessResult(gin.H{
+		"password": password,
+	}))
 }
 
 // DeleteMailbox 删除邮箱
@@ -152,7 +139,7 @@ func (h *MailboxHandler) DeleteMailbox(c *gin.Context) {
 	mailboxIDStr := c.Param("id")
 	mailboxID, err := strconv.ParseInt(mailboxIDStr, 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "邮箱ID格式错误"})
+		c.JSON(http.StatusBadRequest, result.ErrorSimpleResult("邮箱ID格式错误"))
 		return
 	}
 
@@ -161,11 +148,11 @@ func (h *MailboxHandler) DeleteMailbox(c *gin.Context) {
 
 	err = h.mailboxService.DeleteMailbox(mailboxID, userID, isAdmin)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
+		c.JSON(http.StatusBadRequest, result.ErrorSimpleResult(err.Error()))
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"success": true, "message": "邮箱删除成功"})
+	c.JSON(http.StatusOK, result.SimpleResult("邮箱删除成功"))
 }
 
 // isValidEmailPrefix 验证邮箱前缀格式
@@ -200,14 +187,11 @@ func isValidEmailPrefix(prefix string) bool {
 func (h *MailboxHandler) GetAllMailboxes(c *gin.Context) {
 	mailboxes, err := h.mailboxService.GetAllMailboxes()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "获取邮箱列表失败"})
+		c.JSON(http.StatusInternalServerError, result.ErrorSimpleResult("获取邮箱列表失败"))
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"data":    mailboxes,
-	})
+	c.JSON(http.StatusOK, result.SuccessResult(mailboxes))
 }
 
 // UpdateMailboxStatus 更新邮箱状态（管理员）
@@ -215,7 +199,7 @@ func (h *MailboxHandler) UpdateMailboxStatus(c *gin.Context) {
 	mailboxIDStr := c.Param("id")
 	mailboxID, err := strconv.ParseInt(mailboxIDStr, 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "邮箱ID格式错误"})
+		c.JSON(http.StatusBadRequest, result.ErrorSimpleResult("邮箱ID格式错误"))
 		return
 	}
 
@@ -223,22 +207,22 @@ func (h *MailboxHandler) UpdateMailboxStatus(c *gin.Context) {
 		Status string `json:"status" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "请求参数错误"})
+		c.JSON(http.StatusBadRequest, result.ErrorSimpleResult("请求参数错误"))
 		return
 	}
 
 	if req.Status != "active" && req.Status != "suspended" {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "状态值无效"})
+		c.JSON(http.StatusBadRequest, result.ErrorSimpleResult("状态值无效"))
 		return
 	}
 
 	err = h.mailboxService.UpdateMailboxStatus(mailboxID, req.Status)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
+		c.JSON(http.StatusBadRequest, result.ErrorSimpleResult(err.Error()))
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"success": true, "message": "邮箱状态更新成功"})
+	c.JSON(http.StatusOK, result.SimpleResult("邮箱状态更新成功"))
 }
 
 // DeleteMailboxAdmin 删除邮箱（管理员）
@@ -246,17 +230,17 @@ func (h *MailboxHandler) DeleteMailboxAdmin(c *gin.Context) {
 	mailboxIDStr := c.Param("id")
 	mailboxID, err := strconv.ParseInt(mailboxIDStr, 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "邮箱ID格式错误"})
+		c.JSON(http.StatusBadRequest, result.ErrorSimpleResult("邮箱ID格式错误"))
 		return
 	}
 
 	err = h.mailboxService.DeleteMailboxAdmin(mailboxID)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
+		c.JSON(http.StatusBadRequest, result.ErrorSimpleResult(err.Error()))
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"success": true, "message": "邮箱删除成功"})
+	c.JSON(http.StatusOK, result.SimpleResult("邮箱删除成功"))
 }
 
 // GetMailboxStats 获取邮箱统计信息（管理员）
@@ -264,20 +248,17 @@ func (h *MailboxHandler) GetMailboxStats(c *gin.Context) {
 	mailboxIDStr := c.Param("id")
 	mailboxID, err := strconv.ParseInt(mailboxIDStr, 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "邮箱ID格式错误"})
+		c.JSON(http.StatusBadRequest, result.ErrorSimpleResult("邮箱ID格式错误"))
 		return
 	}
 
 	stats, err := h.mailboxService.GetMailboxStats(mailboxID)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
+		c.JSON(http.StatusBadRequest, result.ErrorSimpleResult(err.Error()))
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"data":    stats,
-	})
+	c.JSON(http.StatusOK, result.SuccessResult(stats))
 }
 
 // GetUserStats 获取用户统计信息
@@ -286,15 +267,9 @@ func (h *MailboxHandler) GetUserStats(c *gin.Context) {
 
 	stats, err := h.mailboxService.GetUserStats(userID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"message": "获取统计信息失败: " + err.Error(),
-		})
+		c.JSON(http.StatusInternalServerError, result.ErrorSimpleResult("获取统计信息失败: "+err.Error()))
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"data":    stats,
-	})
+	c.JSON(http.StatusOK, result.SuccessResult(stats))
 }

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"miko-email/internal/result"
 	"miko-email/internal/svc"
 	"net/http"
 	"strconv"
@@ -89,7 +90,7 @@ func NewUserHandler(userService *user.Service, sessionStore *sessions.CookieStor
 func (h *UserHandler) GetUsers(c *gin.Context) {
 	users, err := h.userService.GetUsers()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "获取用户列表失败"})
+		c.JSON(http.StatusInternalServerError, result.ErrorSimpleResult("获取用户列表失败"))
 		return
 	}
 
@@ -99,10 +100,7 @@ func (h *UserHandler) GetUsers(c *gin.Context) {
 		userResponses = append(userResponses, convertUserWithStatsToResponse(userStats))
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"data":    userResponses,
-	})
+	c.JSON(http.StatusOK, result.SuccessResult(userResponses))
 }
 
 // GetUserByID 根据ID获取用户
@@ -110,20 +108,17 @@ func (h *UserHandler) GetUserByID(c *gin.Context) {
 	userIDStr := c.Param("id")
 	userID, err := strconv.ParseInt(userIDStr, 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "用户ID格式错误"})
+		c.JSON(http.StatusBadRequest, result.ErrorSimpleResult("用户ID格式错误"))
 		return
 	}
 
 	user, err := h.userService.GetUserByID(userID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"success": false, "message": err.Error()})
+		c.JSON(http.StatusNotFound, result.ErrorSimpleResult(err.Error()))
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"data":    convertUserToResponse(user),
-	})
+	c.JSON(http.StatusOK, result.SuccessResult(convertUserToResponse(user)))
 }
 
 // GetUserMailboxes 获取用户的邮箱列表
