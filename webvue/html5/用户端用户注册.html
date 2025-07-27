@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Miko邮箱 - 用户注册</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Noto Sans SC', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        :root {
+            --bg-dark: #0f172a;
+            --bg-card: #1e293b;
+            --bg-hover: #334155;
+            --primary: #00B4D8;
+            --primary-light: #90e0ef;
+            --accent: #FF6B6B;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --border: #334155;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --info: #3b82f6;
+        }
+        
+        body {
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+            position: relative;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        /* 装饰元素 */
+        .decoration {
+            position: fixed;
+            z-index: -1;
+            opacity: 0.05;
+        }
+        
+        .circle1 {
+            width: 400px;
+            height: 400px;
+            border-radius: 50%;
+            background: radial-gradient(circle, var(--primary), transparent);
+            top: -200px;
+            right: -100px;
+        }
+        
+        .circle2 {
+            width: 300px;
+            height: 300px;
+            border-radius: 50%;
+            background: radial-gradient(circle, var(--accent), transparent);
+            bottom: -150px;
+            left: -100px;
+        }
+        
+        /* 顶部导航 */
+        .top-nav {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 30px;
+            background-color: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid var(--border);
+            z-index: 100;
+        }
+        
+        .logo {
+            font-size: 24px;
+            font-weight: 700;
+            background: linear-gradient(to right, var(--primary), var(--primary-light));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .logo i {
+            font-size: 28px;
+        }
+        
+        .nav-controls {
+            display: flex;
+            align-items: center;
+            gap: 25px;
+        }
+        
+        .home-link {
+            padding: 8px 15px;
+            background-color: rgba(15, 23, 42, 0.5);
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            text-decoration: none;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.3s ease;
+        }
+        
+        .home-link:hover {
+            background-color: rgba(15, 23, 42, 0.8);
+        }
+        
+        /* 注册容器 */
+        .register-container {
+            width: 100%;
+            max-width: 500px;
+            background: linear-gradient(135deg, rgba(30, 41, 59, 0.9), rgba(15, 23, 42, 0.95));
+            border-radius: 16px;
+            padding: 40px;
+            border: 1px solid var(--border);
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.25);
+            position: relative;
+            overflow: hidden;
+            z-index: 10;
+        }
+        
+        .register-container::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 4px;
+            background: linear-gradient(90deg, var(--primary), var(--accent));
+        }
+        
+        .register-header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .register-title {
+            font-size: 32px;
+            font-weight: 700;
+            margin-bottom: 10px;
+            background: linear-gradient(to right, var(--primary), var(--primary-light));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        
+        .register-subtitle {
+            font-size: 18px;
+            color: var(--text-secondary);
+        }
+        
+        .register-form {
+            display: flex;
+            flex-direction: column;
+            gap: 25px;
+        }
+        
+        .form-row {
+            display: flex;
+            gap: 20px;
+        }
+        
+        .form-group {
+            flex: 1;
+            position: relative;
+        }
+        
+        .input-label {
+            display: block;
+            margin-bottom: 10px;
+            font-weight: 500;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .input-icon {
+            color: var(--primary);
+        }
+        
+        .form-input {
+            width: 100%;
+            padding: 16px 20px 16px 50px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            background-color: rgba(15, 23, 42, 0.5);
+            color: var(--text-primary);
+            font-size: 16px;
+            transition: all 0.3s ease;
+        }
+        
+        .form-input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(0, 180, 216, 0.2);
+        }
+        
+        .input-icon-container {
+            position: absolute;
+            left: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-secondary);
+            font-size: 18px;
+        }
+        
+        .password-container {
+            position: relative;
+        }
+        
+        .toggle-password {
+            position: absolute;
+            right: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 18px;
+        }
+        
+        .domain-group {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        .domain-input {
+            flex: 1;
+        }
+        
+        .domain-select {
+            flex: 1;
+            position: relative;
+        }
+        
+        .domain-select::after {
+            content: '\f107';
+            font-family: 'Font Awesome 6 Free';
+            font-weight: 900;
+            position: absolute;
+            right: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-secondary);
+            font-size: 18px;
+            pointer-events: none;
+        }
+        
+        .domain-error {
+            background-color: rgba(239, 68, 68, 0.15);
+            color: #ef4444;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 10px;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .preview-box {
+            background-color: rgba(15, 23, 42, 0.3);
+            border: 1px dashed var(--border);
+            border-radius: 8px;
+            padding: 12px 20px;
+            margin-top: 15px;
+            font-size: 16px;
+        }
+        
+        .preview-label {
+            color: var(--text-secondary);
+            margin-bottom: 5px;
+            font-size: 14px;
+        }
+        
+        .preview-email {
+            font-weight: 500;
+            color: var(--primary);
+        }
+        
+        .invite-group {
+            margin-top: 15px;
+        }
+        
+        .invite-label {
+            display: block;
+            margin-bottom: 10px;
+            font-weight: 500;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .invite-note {
+            color: var(--text-secondary);
+            font-size: 14px;
+            margin-top: 5px;
+        }
+        
+        .register-btn {
+            padding: 16px;
+            border-radius: 12px;
+            border: none;
+            font-weight: 600;
+            font-size: 18px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: linear-gradient(135deg, var(--primary), #0077b6);
+            color: white;
+            box-shadow: 0 5px 15px rgba(0, 180, 216, 0.2);
+            margin-top: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+        
+        .register-btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 20px rgba(0, 180, 216, 0.3);
+        }
+        
+        .register-footer {
+            text-align: center;
+            margin-top: 30px;
+            color: var(--text-secondary);
+            font-size: 16px;
+        }
+        
+        .login-link {
+            color: var(--primary);
+            text-decoration: none;
+            font-weight: 500;
+            margin-left: 5px;
+            transition: all 0.3s ease;
+        }
+        
+        .login-link:hover {
+            text-decoration: underline;
+        }
+        
+        .return-home {
+            text-align: center;
+            margin-top: 25px;
+        }
+        
+        .home-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--text-secondary);
+            text-decoration: none;
+            transition: all 0.3s ease;
+        }
+        
+        .home-btn:hover {
+            color: var(--primary);
+        }
+        
+        /* 动画效果 */
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+        
+        .floating-icon {
+            position: absolute;
+            font-size: 120px;
+            opacity: 0.1;
+            z-index: -1;
+            animation: float 6s ease-in-out infinite;
+        }
+        
+        .floating-1 {
+            top: 20%;
+            left: 10%;
+            color: var(--primary);
+        }
+        
+        .floating-2 {
+            bottom: 15%;
+            right: 12%;
+            color: var(--accent);
+            animation-delay: 1s;
+        }
+        
+        .floating-3 {
+            top: 40%;
+            right: 20%;
+            color: var(--info);
+            animation-delay: 2s;
+        }
+        
+        /* 响应式设计 */
+        @media (max-width: 768px) {
+            .register-container {
+                padding: 30px 20px;
+            }
+            
+            .top-nav {
+                flex-direction: column;
+                gap: 15px;
+                padding: 15px;
+            }
+            
+            .register-title {
+                font-size: 28px;
+            }
+            
+            .register-subtitle {
+                font-size: 16px;
+            }
+            
+            .form-row {
+                flex-direction: column;
+                gap: 15px;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .register-container {
+                padding: 25px 15px;
+            }
+            
+            .register-title {
+                font-size: 24px;
+            }
+            
+            .form-input {
+                padding: 14px 15px 14px 45px;
+            }
+            
+            .input-icon-container {
+                left: 15px;
+            }
+            
+            .domain-group {
+                flex-direction: column;
+            }
+        }
+        
+        /* 密码强度指示器 */
+        .password-strength {
+            margin-top: 10px;
+            height: 5px;
+            border-radius: 3px;
+            background-color: rgba(15, 23, 42, 0.5);
+            overflow: hidden;
+        }
+        
+        .strength-meter {
+            height: 100%;
+            width: 0;
+            transition: width 0.3s ease;
+            border-radius: 3px;
+        }
+        
+        .strength-weak {
+            background-color: #ef4444;
+            width: 30%;
+        }
+        
+        .strength-medium {
+            background-color: #f59e0b;
+            width: 60%;
+        }
+        
+        .strength-strong {
+            background-color: #10b981;
+            width: 100%;
+        }
+        
+        .strength-text {
+            font-size: 12px;
+            margin-top: 5px;
+            text-align: right;
+        }
+    </style>
+</head>
+<body>
+    <!-- 装饰元素 -->
+    <div class="decoration circle1"></div>
+    <div class="decoration circle2"></div>
+    
+    <!-- 浮动图标 -->
+    <i class="fas fa-user-plus floating-icon floating-1"></i>
+    <i class="fas fa-envelope floating-icon floating-2"></i>
+    <i class="fas fa-key floating-icon floating-3"></i>
+    
+    <!-- 顶部导航 -->
+    <nav class="top-nav">
+        <div class="logo">
+            <i class="fas fa-envelope"></i>
+            <span>Miko邮箱</span>
+        </div>
+        
+        <div class="nav-controls">
+            <a href="#" class="home-link">
+                <i class="fas fa-home"></i>
+                <span>返回首页</span>
+            </a>
+        </div>
+    </nav>
+    
+    <!-- 注册容器 -->
+    <div class="register-container">
+        <div class="register-header">
+            <h1 class="register-title">用户注册</h1>
+            <p class="register-subtitle">创建您的Miko邮箱账户</p>
+        </div>
+        
+        <form class="register-form">
+            <!-- 用户名和邮箱地址 -->
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="input-label">
+                        <i class="fas fa-user input-icon"></i>
+                        用户名
+                    </label>
+                    <div class="input-icon-container">
+                        <i class="fas fa-user"></i>
+                    </div>
+                    <input type="text" class="form-input" placeholder="请输入您的用户名" required>
+                </div>
+                
+                <div class="form-group">
+                    <label class="input-label">
+                        <i class="fas fa-envelope input-icon"></i>
+                        邮箱地址
+                    </label>
+                    <div class="input-icon-container">
+                        <i class="fas fa-envelope"></i>
+                    </div>
+                    <input type="email" class="form-input" placeholder="请输入您的邮箱地址" required>
+                </div>
+            </div>
+            
+            <!-- 密码和确认密码 -->
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="input-label">
+                        <i class="fas fa-lock input-icon"></i>
+                        密码
+                    </label>
+                    <div class="password-container">
+                        <div class="input-icon-container">
+                            <i class="fas fa-lock"></i>
+                        </div>
+                        <input type="password" id="password" class="form-input" placeholder="请输入您的密码" required>
+                        <span class="toggle-password" id="togglePassword">
+                            <i class="fas fa-eye"></i>
+                        </span>
+                    </div>
+                    <div class="password-strength">
+                        <div class="strength-meter" id="strengthMeter"></div>
+                    </div>
+                    <div class="strength-text" id="strengthText">密码强度：弱</div>
+                </div>
+                
+                <div class="form-group">
+                    <label class="input-label">
+                        <i class="fas fa-lock input-icon"></i>
+                        确认密码
+                    </label>
+                    <div class="password-container">
+                        <div class="input-icon-container">
+                            <i class="fas fa-lock"></i>
+                        </div>
+                        <input type="password" id="confirmPassword" class="form-input" placeholder="请再次输入密码" required>
+                        <span class="toggle-password" id="toggleConfirmPassword">
+                            <i class="fas fa-eye"></i>
+                        </span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 邮箱前缀和域名选择 -->
+            <div class="form-group">
+                <label class="input-label">
+                    <i class="fas fa-at input-icon"></i>
+                    邮箱前缀
+                </label>
+                <div class="domain-group">
+                    <div class="domain-input">
+                        <div class="input-icon-container">
+                            <i class="fas fa-user-tag"></i>
+                        </div>
+                        <input type="text" class="form-input" placeholder="例如: myname" id="emailPrefix">
+                    </div>
+                    <div class="domain-select">
+                        <select class="form-input" id="domainSelect">
+                            <option value="" disabled selected>请选择域名</option>
+                            <option value="@company.com">@company.com</option>
+                            <option value="@miko-mail.com">@miko-mail.com</option>
+                            <option value="@business.io">@business.io</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="domain-error">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <span>加载域名列表失败</span>
+                </div>
+                
+                <div class="preview-box">
+                    <div class="preview-label">邮箱预览：</div>
+                    <div class="preview-email" id="emailPreview">请先填写邮箱前缀和选择域名</div>
+                </div>
+            </div>
+            
+            <!-- 邀请码 -->
+            <div class="form-group invite-group">
+                <label class="invite-label">
+                    <i class="fas fa-gift input-icon"></i>
+                    邀请码 (可选)
+                </label>
+                <div class="input-icon-container">
+                    <i class="fas fa-ticket"></i>
+                </div>
+                <input type="text" class="form-input" placeholder="输入邀请码可获得贡献度奖励">
+                <div class="invite-note">输入邀请码可额外获得500贡献度奖励</div>
+            </div>
+            
+            <button type="submit" class="register-btn">
+                <i class="fas fa-user-plus"></i>
+                注册账户
+            </button>
+        </form>
+        
+        <div class="register-footer">
+            <p>已有账户？<a href="#" class="login-link">立即登录</a></p>
+        </div>
+        
+        <div class="return-home">
+            <a href="#" class="home-btn">
+                <i class="fas fa-arrow-left"></i>
+                返回首页
+            </a>
+        </div>
+    </div>
+
+    <script>
+        // 密码显示/隐藏功能
+        const togglePassword = document.getElementById('togglePassword');
+        const password = document.getElementById('password');
+        const toggleConfirmPassword = document.getElementById('toggleConfirmPassword');
+        const confirmPassword = document.getElementById('confirmPassword');
+        
+        togglePassword.addEventListener('click', function() {
+            const type = password.getAttribute('type') === 'password' ? 'text' : 'password';
+            password.setAttribute('type', type);
+            
+            if (type === 'password') {
+                this.innerHTML = '<i class="fas fa-eye"></i>';
+            } else {
+                this.innerHTML = '<i class="fas fa-eye-slash"></i>';
+            }
+        });
+        
+        toggleConfirmPassword.addEventListener('click', function() {
+            const type = confirmPassword.getAttribute('type') === 'password' ? 'text' : 'password';
+            confirmPassword.setAttribute('type', type);
+            
+            if (type === 'password') {
+                this.innerHTML = '<i class="fas fa-eye"></i>';
+            } else {
+                this.innerHTML = '<i class="fas fa-eye-slash"></i>';
+            }
+        });
+        
+        // 密码强度检测
+        password.addEventListener('input', function() {
+            const strengthMeter = document.getElementById('strengthMeter');
+            const strengthText = document.getElementById('strengthText');
+            const value = this.value;
+            
+            // 重置样式
+            strengthMeter.className = 'strength-meter';
+            
+            if (value.length === 0) {
+                strengthText.textContent = '密码强度：';
+                return;
+            }
+            
+            let strength = 0;
+            
+            // 长度检查
+            if (value.length > 7) strength += 1;
+            
+            // 包含小写字母
+            if (/[a-z]/.test(value)) strength += 1;
+            
+            // 包含大写字母
+            if (/[A-Z]/.test(value)) strength += 1;
+            
+            // 包含数字
+            if (/[0-9]/.test(value)) strength += 1;
+            
+            // 包含特殊字符
+            if (/[^A-Za-z0-9]/.test(value)) strength += 1;
+            
+            // 应用样式
+            if (strength < 3) {
+                strengthMeter.classList.add('strength-weak');
+                strengthText.textContent = '密码强度：弱';
+                strengthText.style.color = '#ef4444';
+            } else if (strength < 5) {
+                strengthMeter.classList.add('strength-medium');
+                strengthText.textContent = '密码强度：中';
+                strengthText.style.color = '#f59e0b';
+            } else {
+                strengthMeter.classList.add('strength-strong');
+                strengthText.textContent = '密码强度：强';
+                strengthText.style.color = '#10b981';
+            }
+        });
+        
+        // 邮箱预览功能
+        const emailPrefix = document.getElementById('emailPrefix');
+        const domainSelect = document.getElementById('domainSelect');
+        const emailPreview = document.getElementById('emailPreview');
+        
+        function updateEmailPreview() {
+            const prefix = emailPrefix.value.trim();
+            const domain = domainSelect.value;
+            
+            if (prefix && domain) {
+                emailPreview.textContent = prefix + domain;
+            } else {
+                emailPreview.textContent = '请先填写邮箱前缀和选择域名';
+            }
+        }
+        
+        emailPrefix.addEventListener('input', updateEmailPreview);
+        domainSelect.addEventListener('change', updateEmailPreview);
+        
+        // 注册表单提交
+        const registerForm = document.querySelector('.register-form');
+        registerForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            // 检查密码是否匹配
+            if (password.value !== confirmPassword.value) {
+                alert('两次输入的密码不一致，请重新输入');
+                return;
+            }
+            
+            // 检查邮箱前缀是否填写
+            if (!emailPrefix.value.trim()) {
+                alert('请填写邮箱前缀');
+                return;
+            }
+            
+            // 检查域名是否选择
+            if (!domainSelect.value) {
+                alert('请选择域名');
+                return;
+            }
+            
+            // 模拟注册成功
+            const username = this.querySelector('input[type="text"]').value;
+            alert(`恭喜 ${username}，注册成功！即将跳转到登录页面...`);
+            
+            // 实际项目中这里会有跳转代码
+            // window.location.href = 'login.html';
+        });
+        
+        // 登录链接
+        document.querySelector('.login-link').addEventListener('click', function(e) {
+            e.preventDefault();
+            alert('跳转到登录页面');
+        });
+        
+        // 返回首页链接
+        document.querySelectorAll('.home-btn, .home-link').forEach(link => {
+            link.addEventListener('click', function(e) {
+                e.preventDefault();
+                alert('返回首页');
+            });
+        });
+    </script>
+</body>
+</html>

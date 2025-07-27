@@ -1,0 +1,961 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Miko邮箱系统 - 邮箱管理</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Noto Sans SC', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        :root {
+            --bg-dark: #0f172a;
+            --bg-card: #1e293b;
+            --bg-hover: #334155;
+            --primary: #00B4D8;
+            --primary-light: #90e0ef;
+            --accent: #FF6B6B;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --border: #334155;
+            --success: #10b981;
+            --warning: #f59e0b;
+        }
+        
+        body {
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            overflow-x: hidden;
+        }
+        
+        /* 侧边导航 */
+        .sidebar {
+            width: 260px;
+            background: rgba(15, 23, 42, 0.9);
+            backdrop-filter: blur(10px);
+            padding: 25px 0;
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            z-index: 100;
+            box-shadow: 5px 0 15px rgba(0, 0, 0, 0.2);
+            transition: all 0.3s ease;
+        }
+        
+        .sidebar-header {
+            padding: 0 25px 25px;
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 20px;
+        }
+        
+        .sidebar-title {
+            font-size: 24px;
+            font-weight: 700;
+            background: linear-gradient(to right, var(--primary), var(--primary-light));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-align: center;
+            letter-spacing: 1px;
+        }
+        
+        .nav-menu {
+            list-style: none;
+            padding: 0 15px;
+        }
+        
+        .nav-item {
+            margin-bottom: 8px;
+            border-radius: 8px;
+            overflow: hidden;
+            transition: transform 0.3s ease;
+        }
+        
+        .nav-item:hover {
+            transform: translateX(5px);
+        }
+        
+        .nav-link {
+            display: flex;
+            align-items: center;
+            padding: 14px 20px;
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 16px;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+        
+        .nav-link:hover {
+            background-color: var(--bg-hover);
+            color: var(--text-primary);
+        }
+        
+        .nav-link.active {
+            background: linear-gradient(90deg, rgba(0, 180, 216, 0.2), transparent);
+            color: var(--primary);
+            font-weight: 500;
+        }
+        
+        .nav-link.active::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            height: 100%;
+            width: 4px;
+            background-color: var(--primary);
+            border-radius: 0 4px 4px 0;
+            animation: breath 1.5s infinite ease-in-out;
+        }
+        
+        .nav-icon {
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 15px;
+            font-size: 18px;
+        }
+        
+        /* 主内容区域 */
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            padding: 20px;
+        }
+        
+        /* 顶部栏 */
+        .topbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 30px;
+            background-color: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+            margin-bottom: 30px;
+            border: 1px solid var(--border);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+        }
+        
+        .page-title {
+            font-size: 28px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .page-title i {
+            color: var(--primary);
+            font-size: 24px;
+        }
+        
+        .admin-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            padding: 8px 15px;
+            background-color: rgba(15, 23, 42, 0.5);
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+        
+        .admin-name {
+            font-weight: 500;
+            font-size: 16px;
+        }
+        
+        .admin-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: linear-gradient(45deg, var(--primary), #0077b6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 18px;
+        }
+        
+        /* 内容区域 */
+        .content-container {
+            display: flex;
+            gap: 25px;
+            margin-bottom: 30px;
+            flex: 1;
+        }
+        
+        /* 左侧信息栏 */
+        .left-panel {
+            width: 300px;
+            background: linear-gradient(135deg, rgba(30, 41, 59, 0.8), rgba(15, 23, 42, 0.9));
+            border-radius: 16px;
+            padding: 25px;
+            border: 1px solid var(--border);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+            height: fit-content;
+        }
+        
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .panel-title {
+            font-size: 20px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .search-box {
+            position: relative;
+            margin-bottom: 25px;
+        }
+        
+        .search-input {
+            width: 100%;
+            padding: 12px 15px 12px 45px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background-color: rgba(15, 23, 42, 0.5);
+            color: var(--text-primary);
+            font-size: 16px;
+            transition: all 0.3s ease;
+        }
+        
+        .search-input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(0, 180, 216, 0.2);
+        }
+        
+        .search-icon {
+            position: absolute;
+            left: 15px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-secondary);
+        }
+        
+        /* 状态过滤器 */
+        .status-filter {
+            margin-bottom: 25px;
+        }
+        
+        .filter-title {
+            font-size: 16px;
+            color: var(--text-secondary);
+            margin-bottom: 12px;
+        }
+        
+        .status-cards {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        
+        .status-card {
+            padding: 8px 15px;
+            border-radius: 8px;
+            background-color: rgba(15, 23, 42, 0.5);
+            border: 1px solid var(--border);
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 14px;
+        }
+        
+        .status-card.active {
+            background-color: rgba(0, 180, 216, 0.15);
+            border-color: var(--primary);
+            color: var(--primary);
+        }
+        
+        .status-card:hover {
+            background-color: rgba(0, 180, 216, 0.1);
+        }
+        
+        /* 统计信息 */
+        .stats-info {
+            padding: 15px;
+            background-color: rgba(15, 23, 42, 0.5);
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            font-size: 15px;
+            text-align: center;
+            color: var(--text-secondary);
+        }
+        
+        .stats-value {
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--primary);
+            margin: 10px 0;
+        }
+        
+        /* 右侧邮箱列表 */
+        .right-panel {
+            flex: 1;
+            background: linear-gradient(135deg, rgba(30, 41, 59, 0.8), rgba(15, 23, 42, 0.9));
+            border-radius: 16px;
+            padding: 25px;
+            border: 1px solid var(--border);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .email-list-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .section-title {
+            font-size: 22px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .section-title i {
+            color: var(--primary);
+        }
+        
+        /* 邮箱表格 */
+        .email-table-container {
+            overflow-x: auto;
+            flex: 1;
+        }
+        
+        .email-table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 900px;
+        }
+        
+        .email-table th {
+            background-color: rgba(15, 23, 42, 0.7);
+            padding: 15px 20px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 16px;
+            color: var(--text-secondary);
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .email-table td {
+            padding: 18px 20px;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+            font-size: 16px;
+        }
+        
+        .email-table tr:last-child td {
+            border-bottom: none;
+        }
+        
+        .email-table tr:hover {
+            background-color: rgba(51, 65, 85, 0.2);
+        }
+        
+        /* 状态标签 */
+        .status-label {
+            display: inline-block;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        
+        .status-active {
+            background-color: rgba(16, 185, 129, 0.15);
+            color: var(--success);
+        }
+        
+        .status-inactive {
+            background-color: rgba(245, 158, 11, 0.15);
+            color: var(--warning);
+        }
+        
+        .status-disabled {
+            background-color: rgba(255, 107, 107, 0.15);
+            color: var(--accent);
+        }
+        
+        /* 操作按钮 */
+        .action-buttons {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .action-btn {
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: rgba(255, 255, 255, 0.08);
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border: none;
+            font-size: 16px;
+        }
+        
+        .action-btn:hover {
+            background-color: var(--primary);
+            color: white;
+        }
+        
+        .action-btn.delete:hover {
+            background-color: var(--accent);
+        }
+        
+        /* 底部操作栏 */
+        .bottom-actions {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: linear-gradient(135deg, rgba(30, 41, 59, 0.8), rgba(15, 23, 42, 0.9));
+            border-radius: 16px;
+            padding: 20px 30px;
+            border: 1px solid var(--border);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+        }
+        
+        .selection-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            font-size: 16px;
+            color: var(--text-secondary);
+        }
+        
+        .selected-count {
+            font-weight: 700;
+            color: var(--primary);
+        }
+        
+        .action-buttons-large {
+            display: flex;
+            gap: 15px;
+        }
+        
+        .action-btn-large {
+            padding: 12px 25px;
+            border-radius: 8px;
+            border: none;
+            font-weight: 600;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .delete-btn {
+            background-color: rgba(255, 107, 107, 0.15);
+            color: var(--accent);
+        }
+        
+        .delete-btn:hover {
+            background-color: var(--accent);
+            color: white;
+        }
+        
+        .save-btn {
+            background-color: rgba(16, 185, 129, 0.15);
+            color: var(--success);
+        }
+        
+        .save-btn:hover {
+            background-color: var(--success);
+            color: white;
+        }
+        
+        .add-btn {
+            background: linear-gradient(135deg, var(--primary), #0077b6);
+            color: white;
+        }
+        
+        .add-btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 5px 15px rgba(0, 180, 216, 0.3);
+        }
+        
+        /* 警告提示 */
+        .warning-alert {
+            background-color: rgba(245, 158, 11, 0.15);
+            border: 1px solid rgba(245, 158, 11, 0.3);
+            border-radius: 12px;
+            padding: 15px 20px;
+            margin-top: 25px;
+            display: flex;
+            align-items: flex-start;
+            gap: 15px;
+            font-size: 15px;
+            color: var(--warning);
+        }
+        
+        .warning-alert i {
+            font-size: 20px;
+            margin-top: 2px;
+        }
+        
+        /* 动画效果 */
+        @keyframes breath {
+            0%, 100% { opacity: 0.6; }
+            50% { opacity: 1; }
+        }
+        
+        /* 响应式设计 */
+        @media (max-width: 1200px) {
+            .content-container {
+                flex-direction: column;
+            }
+            
+            .left-panel {
+                width: 100%;
+            }
+        }
+        
+        @media (max-width: 992px) {
+            .sidebar {
+                width: 80px;
+            }
+            .sidebar-title, .nav-text {
+                display: none;
+            }
+            .sidebar-header {
+                padding: 0 15px 20px;
+                text-align: center;
+            }
+            .nav-link {
+                justify-content: center;
+                padding: 15px;
+            }
+            .nav-icon {
+                margin-right: 0;
+                font-size: 20px;
+            }
+            
+            .bottom-actions {
+                flex-direction: column;
+                gap: 15px;
+                align-items: flex-start;
+            }
+        }
+        
+        @media (max-width: 768px) {
+            .topbar {
+                flex-direction: column;
+                gap: 15px;
+                padding: 20px;
+            }
+            .page-title {
+                font-size: 24px;
+            }
+            .admin-info {
+                width: 100%;
+                justify-content: center;
+            }
+            
+            .action-buttons-large {
+                flex-wrap: wrap;
+            }
+        }
+        
+        /* 装饰元素 */
+        .decoration {
+            position: fixed;
+            z-index: -1;
+            opacity: 0.05;
+        }
+        
+        .circle1 {
+            width: 400px;
+            height: 400px;
+            border-radius: 50%;
+            background: radial-gradient(circle, var(--primary), transparent);
+            top: -200px;
+            right: -100px;
+        }
+        
+        .circle2 {
+            width: 300px;
+            height: 300px;
+            border-radius: 50%;
+            background: radial-gradient(circle, var(--accent), transparent);
+            bottom: -150px;
+            left: -100px;
+        }
+    </style>
+</head>
+<body>
+    <!-- 装饰元素 -->
+    <div class="decoration circle1"></div>
+    <div class="decoration circle2"></div>
+    
+    <!-- 侧边导航 -->
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <h2 class="sidebar-title">管理员面板</h2>
+        </div>
+        
+        <ul class="nav-menu">
+            <li class="nav-item">
+                <a href="#" class="nav-link">
+                    <div class="nav-icon">
+                        <i class="fas fa-tachometer-alt"></i>
+                    </div>
+                    <span class="nav-text">仪表板</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a href="#" class="nav-link">
+                    <div class="nav-icon">
+                        <i class="fas fa-users"></i>
+                    </div>
+                    <span class="nav-text">用户管理</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a href="#" class="nav-link active">
+                    <div class="nav-icon">
+                        <i class="fas fa-envelope"></i>
+                    </div>
+                    <span class="nav-text">邮箱管理</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a href="#" class="nav-link">
+                    <div class="nav-icon">
+                        <i class="fas fa-globe"></i>
+                    </div>
+                    <span class="nav-text">域名管理</span>
+                </a>
+            </li>
+        </ul>
+    </aside>
+    
+    <!-- 主内容区域 -->
+    <main class="main-content">
+        <!-- 顶部栏 -->
+        <header class="topbar">
+            <div class="page-title">
+                <i class="fas fa-envelope"></i>
+                <span>邮箱管理</span>
+            </div>
+            
+            <div class="admin-info">
+                <div class="admin-name">管理员</div>
+                <div class="admin-avatar">A</div>
+            </div>
+        </header>
+        
+        <!-- 内容区域 -->
+        <div class="content-container">
+            <!-- 左侧信息栏 -->
+            <div class="left-panel">
+                <div class="panel-header">
+                    <h3 class="panel-title">
+                        <i class="fas fa-filter"></i>
+                        <span>邮箱筛选</span>
+                    </h3>
+                </div>
+                
+                <div class="search-box">
+                    <i class="fas fa-search search-icon"></i>
+                    <input type="text" class="search-input" placeholder="搜索邮箱地址...">
+                </div>
+                
+                <div class="status-filter">
+                    <div class="filter-title">邮箱状态</div>
+                    <div class="status-cards">
+                        <div class="status-card active">全部状态</div>
+                        <div class="status-card">已启动</div>
+                        <div class="status-card">已禁用</div>
+                        <div class="status-card">待验证</div>
+                    </div>
+                </div>
+                
+                <div class="status-filter">
+                    <div class="filter-title">服务状态</div>
+                    <div class="status-cards">
+                        <div class="status-card active">全部服务</div>
+                        <div class="status-card">SMTP</div>
+                        <div class="status-card">IMAP</div>
+                        <div class="status-card">POP3</div>
+                    </div>
+                </div>
+                
+                <div class="stats-info">
+                    <div>已选择邮箱数量</div>
+                    <div class="stats-value">0</div>
+                    <div>总计 128 个邮箱</div>
+                </div>
+            </div>
+            
+            <!-- 右侧邮箱列表 -->
+            <div class="right-panel">
+                <div class="email-list-header">
+                    <h3 class="section-title">
+                        <i class="fas fa-list"></i>
+                        <span>邮箱列表</span>
+                    </h3>
+                </div>
+                
+                <div class="email-table-container">
+                    <table class="email-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 5%;"></th>
+                                <th style="width: 25%;">邮箱地址</th>
+                                <th style="width: 20%;">所属用户</th>
+                                <th style="width: 15%;">状态</th>
+                                <th style="width: 20%;">创建时间</th>
+                                <th style="width: 15%;">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><input type="checkbox"></td>
+                                <td>admin@company.com</td>
+                                <td>Administrator</td>
+                                <td>
+                                    <span class="status-label status-active">已启动</span>
+                                </td>
+                                <td>2023-05-10 14:30:22</td>
+                                <td>
+                                    <div class="action-buttons">
+                                        <button class="action-btn">
+                                            <i class="fas fa-edit"></i>
+                                        </button>
+                                        <button class="action-btn">
+                                            <i class="fas fa-cog"></i>
+                                        </button>
+                                        <button class="action-btn delete">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td><input type="checkbox"></td>
+                                <td>jane.doe@business.io</td>
+                                <td>Jane Doe</td>
+                                <td>
+                                    <span class="status-label status-active">已启动</span>
+                                </td>
+                                <td>2023-07-15 09:15:47</td>
+                                <td>
+                                    <div class="action-buttons">
+                                        <button class="action-btn">
+                                            <i class="fas fa-edit"></i>
+                                        </button>
+                                        <button class="action-btn">
+                                            <i class="fas fa-cog"></i>
+                                        </button>
+                                        <button class="action-btn delete">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td><input type="checkbox"></td>
+                                <td>john.smith@enterprise.net</td>
+                                <td>John Smith</td>
+                                <td>
+                                    <span class="status-label status-inactive">已禁用</span>
+                                </td>
+                                <td>2023-06-22 16:45:18</td>
+                                <td>
+                                    <div class="action-buttons">
+                                        <button class="action-btn">
+                                            <i class="fas fa-edit"></i>
+                                        </button>
+                                        <button class="action-btn">
+                                            <i class="fas fa-cog"></i>
+                                        </button>
+                                        <button class="action-btn delete">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td><input type="checkbox"></td>
+                                <td>support@techsolutions.org</td>
+                                <td>Support Team</td>
+                                <td>
+                                    <span class="status-label status-active">已启动</span>
+                                </td>
+                                <td>2023-07-18 11:20:35</td>
+                                <td>
+                                    <div class="action-buttons">
+                                        <button class="action-btn">
+                                            <i class="fas fa-edit"></i>
+                                        </button>
+                                        <button class="action-btn">
+                                            <i class="fas fa-cog"></i>
+                                        </button>
+                                        <button class="action-btn delete">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td><input type="checkbox"></td>
+                                <td>sales@luxername.com</td>
+                                <td>Sales Department</td>
+                                <td>
+                                    <span class="status-label status-disabled">验证失败</span>
+                                </td>
+                                <td>2023-07-20 13:45:10</td>
+                                <td>
+                                    <div class="action-buttons">
+                                        <button class="action-btn">
+                                            <i class="fas fa-edit"></i>
+                                        </button>
+                                        <button class="action-btn">
+                                            <i class="fas fa-cog"></i>
+                                        </button>
+                                        <button class="action-btn delete">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 底部操作栏 -->
+        <div class="bottom-actions">
+            <div class="selection-info">
+                <i class="fas fa-check-circle"></i>
+                <span>已选择 <span class="selected-count">0</span> 个邮箱</span>
+            </div>
+            
+            <div class="action-buttons-large">
+                <button class="action-btn-large delete-btn">
+                    <i class="fas fa-trash"></i>
+                    删除邮箱
+                </button>
+                <button class="action-btn-large save-btn">
+                    <i class="fas fa-save"></i>
+                    保存用户
+                </button>
+                <button class="action-btn-large add-btn">
+                    <i class="fas fa-plus"></i>
+                    添加邮箱
+                </button>
+            </div>
+        </div>
+        
+        <!-- 警告提示 -->
+        <div class="warning-alert">
+            <i class="fas fa-exclamation-triangle"></i>
+            <div>
+                <strong>重要提示：</strong> 
+                删除邮箱操作将立即生效且无法恢复，请谨慎操作。建议在删除前备份相关数据。
+            </div>
+        </div>
+    </main>
+    
+    <script>
+        // 状态卡片点击事件
+        document.querySelectorAll('.status-card').forEach(card => {
+            card.addEventListener('click', function() {
+                document.querySelectorAll('.status-card').forEach(c => {
+                    c.classList.remove('active');
+                });
+                this.classList.add('active');
+            });
+        });
+        
+        // 复选框选择事件
+        const checkboxes = document.querySelectorAll('input[type="checkbox"]');
+        const selectedCount = document.querySelector('.selected-count');
+        const statsValue = document.querySelector('.stats-value');
+        
+        checkboxes.forEach(checkbox => {
+            checkbox.addEventListener('change', updateSelection);
+        });
+        
+        function updateSelection() {
+            const selected = document.querySelectorAll('input[type="checkbox"]:checked').length;
+            selectedCount.textContent = selected;
+            statsValue.textContent = selected;
+        }
+        
+        // 删除按钮事件
+        document.querySelectorAll('.action-btn.delete').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const row = this.closest('tr');
+                row.style.opacity = '0.5';
+                row.style.backgroundColor = 'rgba(255, 107, 107, 0.1)';
+                
+                // 模拟删除操作
+                setTimeout(() => {
+                    row.style.display = 'none';
+                    updateSelection();
+                }, 800);
+            });
+        });
+        
+        // 批量删除按钮
+        document.querySelector('.delete-btn').addEventListener('click', function() {
+            const selected = document.querySelectorAll('input[type="checkbox"]:checked');
+            
+            if(selected.length === 0) {
+                alert('请选择至少一个邮箱进行操作');
+                return;
+            }
+            
+            if(confirm(`确定要删除选中的 ${selected.length} 个邮箱吗？此操作不可恢复。`)) {
+                selected.forEach(checkbox => {
+                    const row = checkbox.closest('tr');
+                    row.style.opacity = '0.5';
+                    row.style.backgroundColor = 'rgba(255, 107, 107, 0.1)';
+                    
+                    setTimeout(() => {
+                        row.style.display = 'none';
+                        updateSelection();
+                    }, 800);
+                });
+            }
+        });
+        
+        // 添加邮箱按钮
+        document.querySelector('.add-btn').addEventListener('click', function() {
+            alert('添加新邮箱功能');
+        });
+    </script>
+</body>
+</html>

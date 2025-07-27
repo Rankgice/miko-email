@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Miko邮箱 - 用户登录</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Noto Sans SC', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        :root {
+            --bg-dark: #0f172a;
+            --bg-card: #1e293b;
+            --bg-hover: #334155;
+            --primary: #00B4D8;
+            --primary-light: #90e0ef;
+            --accent: #FF6B6B;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --border: #334155;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --info: #3b82f6;
+        }
+        
+        body {
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+            position: relative;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        /* 装饰元素 */
+        .decoration {
+            position: fixed;
+            z-index: -1;
+            opacity: 0.05;
+        }
+        
+        .circle1 {
+            width: 400px;
+            height: 400px;
+            border-radius: 50%;
+            background: radial-gradient(circle, var(--primary), transparent);
+            top: -200px;
+            right: -100px;
+        }
+        
+        .circle2 {
+            width: 300px;
+            height: 300px;
+            border-radius: 50%;
+            background: radial-gradient(circle, var(--accent), transparent);
+            bottom: -150px;
+            left: -100px;
+        }
+        
+        /* 顶部导航 */
+        .top-nav {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 30px;
+            background-color: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid var(--border);
+            z-index: 100;
+        }
+        
+        .logo {
+            font-size: 24px;
+            font-weight: 700;
+            background: linear-gradient(to right, var(--primary), var(--primary-light));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .logo i {
+            font-size: 28px;
+        }
+        
+        .nav-controls {
+            display: flex;
+            align-items: center;
+            gap: 25px;
+        }
+        
+        .home-link {
+            padding: 8px 15px;
+            background-color: rgba(15, 23, 42, 0.5);
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            text-decoration: none;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.3s ease;
+        }
+        
+        .home-link:hover {
+            background-color: rgba(15, 23, 42, 0.8);
+        }
+        
+        /* 登录容器 */
+        .login-container {
+            width: 100%;
+            max-width: 450px;
+            background: linear-gradient(135deg, rgba(30, 41, 59, 0.9), rgba(15, 23, 42, 0.95));
+            border-radius: 16px;
+            padding: 40px;
+            border: 1px solid var(--border);
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.25);
+            position: relative;
+            overflow: hidden;
+            z-index: 10;
+        }
+        
+        .login-container::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 4px;
+            background: linear-gradient(90deg, var(--primary), var(--accent));
+        }
+        
+        .login-header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+        
+        .login-title {
+            font-size: 32px;
+            font-weight: 700;
+            margin-bottom: 10px;
+            background: linear-gradient(to right, var(--primary), var(--primary-light));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        
+        .login-subtitle {
+            font-size: 18px;
+            color: var(--text-secondary);
+        }
+        
+        .login-form {
+            display: flex;
+            flex-direction: column;
+            gap: 25px;
+        }
+        
+        .input-group {
+            position: relative;
+        }
+        
+        .input-label {
+            display: block;
+            margin-bottom: 10px;
+            font-weight: 500;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .input-icon {
+            color: var(--primary);
+        }
+        
+        .form-input {
+            width: 100%;
+            padding: 16px 20px 16px 50px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            background-color: rgba(15, 23, 42, 0.5);
+            color: var(--text-primary);
+            font-size: 16px;
+            transition: all 0.3s ease;
+        }
+        
+        .form-input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(0, 180, 216, 0.2);
+        }
+        
+        .input-icon-container {
+            position: absolute;
+            left: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-secondary);
+            font-size: 18px;
+        }
+        
+        .password-container {
+            position: relative;
+        }
+        
+        .toggle-password {
+            position: absolute;
+            right: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 18px;
+        }
+        
+        .login-options {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 10px;
+        }
+        
+        .remember-me {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .remember-checkbox {
+            width: 18px;
+            height: 18px;
+            border-radius: 4px;
+            border: 1px solid var(--border);
+            background: rgba(15, 23, 42, 0.5);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .remember-checkbox.checked::after {
+            content: '\f00c';
+            font-family: 'Font Awesome 6 Free';
+            font-weight: 900;
+            font-size: 12px;
+            color: var(--primary);
+        }
+        
+        .forgot-password {
+            color: var(--primary);
+            text-decoration: none;
+            font-size: 14px;
+            transition: all 0.3s ease;
+        }
+        
+        .forgot-password:hover {
+            text-decoration: underline;
+        }
+        
+        .login-btn {
+            padding: 16px;
+            border-radius: 12px;
+            border: none;
+            font-weight: 600;
+            font-size: 18px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: linear-gradient(135deg, var(--primary), #0077b6);
+            color: white;
+            box-shadow: 0 5px 15px rgba(0, 180, 216, 0.2);
+            margin-top: 10px;
+        }
+        
+        .login-btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 20px rgba(0, 180, 216, 0.3);
+        }
+        
+        .login-footer {
+            text-align: center;
+            margin-top: 30px;
+            color: var(--text-secondary);
+            font-size: 15px;
+        }
+        
+        .register-link {
+            color: var(--primary);
+            text-decoration: none;
+            font-weight: 500;
+            margin-left: 5px;
+            transition: all 0.3s ease;
+        }
+        
+        .register-link:hover {
+            text-decoration: underline;
+        }
+        
+        .alternative-login {
+            margin-top: 30px;
+            border-top: 1px solid var(--border);
+            padding-top: 30px;
+        }
+        
+        .alt-title {
+            text-align: center;
+            margin-bottom: 20px;
+            color: var(--text-secondary);
+            font-size: 16px;
+            position: relative;
+        }
+        
+        .alt-title::before,
+        .alt-title::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            width: 30%;
+            height: 1px;
+            background: var(--border);
+        }
+        
+        .alt-title::before {
+            left: 0;
+        }
+        
+        .alt-title::after {
+            right: 0;
+        }
+        
+        .alt-buttons {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+        }
+        
+        .alt-btn {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: rgba(15, 23, 42, 0.5);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            font-size: 18px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .alt-btn:hover {
+            transform: translateY(-3px);
+            background: rgba(59, 130, 246, 0.15);
+            color: var(--primary);
+        }
+        
+        .return-home {
+            text-align: center;
+            margin-top: 25px;
+        }
+        
+        .home-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--text-secondary);
+            text-decoration: none;
+            transition: all 0.3s ease;
+        }
+        
+        .home-btn:hover {
+            color: var(--primary);
+        }
+        
+        /* 动画效果 */
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+        
+        .floating-icon {
+            position: absolute;
+            font-size: 120px;
+            opacity: 0.1;
+            z-index: -1;
+            animation: float 6s ease-in-out infinite;
+        }
+        
+        .floating-1 {
+            top: 20%;
+            left: 10%;
+            color: var(--primary);
+        }
+        
+        .floating-2 {
+            bottom: 15%;
+            right: 12%;
+            color: var(--accent);
+            animation-delay: 1s;
+        }
+        
+        .floating-3 {
+            top: 40%;
+            right: 20%;
+            color: var(--info);
+            animation-delay: 2s;
+        }
+        
+        /* 响应式设计 */
+        @media (max-width: 768px) {
+            .login-container {
+                padding: 30px 20px;
+            }
+            
+            .top-nav {
+                flex-direction: column;
+                gap: 15px;
+                padding: 15px;
+            }
+            
+            .login-title {
+                font-size: 28px;
+            }
+            
+            .login-subtitle {
+                font-size: 16px;
+            }
+            
+            .login-options {
+                flex-direction: column;
+                gap: 15px;
+                align-items: flex-start;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .login-container {
+                padding: 25px 15px;
+            }
+            
+            .login-title {
+                font-size: 24px;
+            }
+            
+            .form-input {
+                padding: 14px 15px 14px 45px;
+            }
+            
+            .input-icon-container {
+                left: 15px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- 装饰元素 -->
+    <div class="decoration circle1"></div>
+    <div class="decoration circle2"></div>
+    
+    <!-- 浮动图标 -->
+    <i class="fas fa-envelope floating-icon floating-1"></i>
+    <i class="fas fa-lock floating-icon floating-2"></i>
+    <i class="fas fa-user floating-icon floating-3"></i>
+    
+    <!-- 顶部导航 -->
+    <nav class="top-nav">
+        <div class="logo">
+            <i class="fas fa-envelope"></i>
+            <span>Miko邮箱</span>
+        </div>
+        
+        <div class="nav-controls">
+            <a href="#" class="home-link">
+                <i class="fas fa-home"></i>
+                <span>返回首页</span>
+            </a>
+        </div>
+    </nav>
+    
+    <!-- 登录容器 -->
+    <div class="login-container">
+        <div class="login-header">
+            <h1 class="login-title">用户登录</h1>
+            <p class="login-subtitle">登录到您的Miko邮箱账户</p>
+        </div>
+        
+        <form class="login-form">
+            <div class="input-group">
+                <label class="input-label">
+                    <i class="fas fa-user input-icon"></i>
+                    用户名
+                </label>
+                <div class="input-icon-container">
+                    <i class="fas fa-user"></i>
+                </div>
+                <input type="text" class="form-input" placeholder="请输入您的用户名或邮箱" required>
+            </div>
+            
+            <div class="input-group">
+                <label class="input-label">
+                    <i class="fas fa-lock input-icon"></i>
+                    密码
+                </label>
+                <div class="input-icon-container">
+                    <i class="fas fa-lock"></i>
+                </div>
+                <div class="password-container">
+                    <input type="password" id="password" class="form-input" placeholder="请输入您的密码" required>
+                    <span class="toggle-password" id="togglePassword">
+                        <i class="fas fa-eye"></i>
+                    </span>
+                </div>
+            </div>
+            
+            <div class="login-options">
+                <div class="remember-me">
+                    <div class="remember-checkbox" id="rememberCheckbox"></div>
+                    <span>记住我</span>
+                </div>
+                <a href="#" class="forgot-password">忘记密码？</a>
+            </div>
+            
+            <button type="submit" class="login-btn">
+                <i class="fas fa-sign-in-alt"></i>
+                登录
+            </button>
+        </form>
+        
+        <div class="login-footer">
+            <p>还没有账户？<a href="#" class="register-link">立即注册</a></p>
+        </div>
+        
+        <div class="alternative-login">
+            <div class="alt-title">搜索登录</div>
+            <div class="alt-buttons">
+                <button class="alt-btn">
+                    <i class="fab fa-google"></i>
+                </button>
+                <button class="alt-btn">
+                    <i class="fab fa-microsoft"></i>
+                </button>
+                <button class="alt-btn">
+                    <i class="fab fa-apple"></i>
+                </button>
+                <button class="alt-btn">
+                    <i class="fab fa-github"></i>
+                </button>
+            </div>
+        </div>
+        
+        <div class="return-home">
+            <a href="#" class="home-btn">
+                <i class="fas fa-arrow-left"></i>
+                返回首页
+            </a>
+        </div>
+    </div>
+
+    <script>
+        // 密码显示/隐藏功能
+        const togglePassword = document.getElementById('togglePassword');
+        const password = document.getElementById('password');
+        
+        togglePassword.addEventListener('click', function() {
+            const type = password.getAttribute('type') === 'password' ? 'text' : 'password';
+            password.setAttribute('type', type);
+            
+            if (type === 'password') {
+                this.innerHTML = '<i class="fas fa-eye"></i>';
+            } else {
+                this.innerHTML = '<i class="fas fa-eye-slash"></i>';
+            }
+        });
+        
+        // 记住我复选框功能
+        const rememberCheckbox = document.getElementById('rememberCheckbox');
+        rememberCheckbox.addEventListener('click', function() {
+            this.classList.toggle('checked');
+        });
+        
+        // 登录表单提交
+        const loginForm = document.querySelector('.login-form');
+        loginForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            // 模拟登录成功
+            const username = this.querySelector('input[type="text"]').value;
+            alert(`欢迎回来，${username}！登录成功，正在跳转...`);
+            
+            // 实际项目中这里会有跳转代码
+            // window.location.href = 'dashboard.html';
+        });
+        
+        // 注册链接
+        document.querySelector('.register-link').addEventListener('click', function(e) {
+            e.preventDefault();
+            alert('跳转到注册页面');
+        });
+        
+        // 返回首页链接
+        document.querySelectorAll('.home-btn, .home-link').forEach(link => {
+            link.addEventListener('click', function(e) {
+                e.preventDefault();
+                alert('返回首页');
+            });
+        });
+    </script>
+</body>
+</html>
